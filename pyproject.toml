@@ -1,0 +1,13 @@
+[project]
+name = "memory-palace-cli"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.2.1",
+    "colorama>=0.4.6",
+    "python-dotenv>=1.1.1",
+    "requests>=2.32.5",
+    "rich>=14.1.0",
+]
