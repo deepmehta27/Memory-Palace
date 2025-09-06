@@ -1,415 +1,671 @@
 #!/usr/bin/env python3
 """
-Memory Palace CLI - Transform your notes into memorable study experiences!
+Memory Palace CLI - Conversational Study Assistant
+Transform your notes into memorable study experiences through natural conversation!
 """
 
 import os
 import sys
+import glob
 from pathlib import Path
 from dotenv import load_dotenv
+from typing import List, Dict, Any
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
 try:
-    from utils import (
-        print_welcome, print_success, print_error, print_info,
-        ensure_data_dir, load_json, console
-    )
+    from utils import call_gemini_cli, print_welcome, print_success, print_error, print_info, ensure_data_dir, load_json, save_json, console
     from flashcards import generate_flashcards_from_file
     from quiz import start_quiz
-    # NEW: MCQ feature
     from mcq import generate_mcqs, run_mcq_quiz
 except ImportError as e:
     print(f"Error importing modules: {e}")
     print("Make sure all files are in the same directory and dependencies are installed.")
     sys.exit(1)
 
-
-# =============================
-# Interactive Mode (Menu)
-# =============================
-def interactive_mode():
-    """Interactive menu-driven mode."""
-    while True:
-        console.print("\n[bold cyan]🎯 What would you like to do?[/bold cyan]")
-        console.print("1. 📚 Generate flashcards from notes")
-        console.print("2. 🎯 Start interactive quiz")
-        console.print("3. 📊 View study statistics")
-        console.print("4. 🎮 Run demo with sample data")
-        console.print("5. 🔍 Debug/check setup")
-        console.print("6. ❓ Help & commands")
-        console.print("7. 📝 Generate MCQs from notes   [new]")
-        console.print("8. 🧪 Start MCQ quiz             [new]")
-        console.print("0. 👋 Exit")
-
-        choice = input("\nChoose an option (0-8): ").strip()
-
-        try:
-            if choice == "0":
-                print_success("Thanks for using Memory Palace CLI! Happy studying! 📚✨")
-                break
-            elif choice == "1":
-                handle_generate()
-            elif choice == "2":
-                handle_quiz()
-            elif choice == "3":
-                handle_stats()
-            elif choice == "4":
-                handle_demo()
-            elif choice == "5":
-                handle_debug()
-            elif choice == "6":
-                show_help()
-            elif choice == "7":
-                handle_mcq_generate()
-            elif choice == "8":
-                handle_mcq_quiz()
-            else:
-                print_error("Invalid choice. Please enter a number 0-8.")
-        except KeyboardInterrupt:
-            print_info("\nOperation cancelled. Returning to menu...")
-        except Exception as e:
-            print_error(f"Error: {e}")
-
-
-# =============================
-# Flashcards (existing)
-# =============================
-def handle_generate():
-    """Handle flashcard generation interactively."""
-    console.print("\n[bold blue]📚 Generate Flashcards[/bold blue]")
-
-    data_dir = Path("data")
-    if data_dir.exists():
-        md_files = list(data_dir.glob("*.md")) + list(data_dir.glob("*.txt"))
-        if md_files:
-            console.print("\n[cyan]Available notes files:[/cyan]")
-            for i, file in enumerate(md_files, 1):
-                console.print(f"  {i}. {file.name}")
-
-            file_choice = input("\nChoose a file number or enter custom path: ").strip()
+class StudyAssistant:
+    def __init__(self):
+        self.current_directory = None
+        self.discovered_files = []
+        self.session_data = {
+            "start_time": None,
+            "activities": [],
+            "files_processed": [],
+            "quiz_sessions": 0,
+            "total_questions": 0,
+            "correct_answers": 0
+        }
+        self.conversation_context = []
+    
+    def discover_directories(self) -> List[Path]:
+        """Discover potential study directories in the current workspace."""
+        current_path = Path(".")
+        potential_dirs = []
+        
+        # Look for directories with study-related files
+        for item in current_path.iterdir():
+            if item.is_dir() and not item.name.startswith('.'):
+                # Check if directory contains study files
+                study_files = list(item.glob("*.md")) + list(item.glob("*.txt")) + list(item.glob("*.pdf"))
+                if study_files:
+                    potential_dirs.append(item)
+        
+        # Also check current directory
+        current_files = list(current_path.glob("*.md")) + list(current_path.glob("*.txt")) + list(current_path.glob("*.pdf"))
+        if current_files:
+            potential_dirs.insert(0, current_path)
+        
+        return potential_dirs
+    
+    def analyze_directory(self, directory: Path) -> Dict[str, Any]:
+        """Analyze a directory and summarize its contents."""
+        analysis = {
+            "path": str(directory),
+            "total_files": 0,
+            "markdown_files": [],
+            "text_files": [],
+            "pdf_files": [],
+            "total_size": 0,
+            "subjects": set(),
+            "content_preview": ""
+        }
+        
+        # Scan for different file types
+        for ext, file_list in [("*.md", "markdown_files"), ("*.txt", "text_files"), ("*.pdf", "pdf_files")]:
+            files = list(directory.glob(ext))
+            analysis[file_list] = [f.name for f in files]
+            analysis["total_files"] += len(files)
+            
+            # Calculate total size
+            for file in files:
+                try:
+                    analysis["total_size"] += file.stat().st_size
+                except:
+                    pass
+        
+        # Analyze content for subject detection and preview
+        sample_content = ""
+        for md_file in directory.glob("*.md"):
             try:
-                file_index = int(file_choice) - 1
-                if 0 <= file_index < len(md_files):
-                    notes_file = str(md_files[file_index])
+                content = md_file.read_text(encoding='utf-8', errors='ignore')[:1000]
+                sample_content += content + "\n"
+                
+                # Basic subject detection
+                content_lower = content.lower()
+                subjects = ["biology", "chemistry", "physics", "math", "history", "literature", "computer science"]
+                for subject in subjects:
+                    if subject in content_lower:
+                        analysis["subjects"].add(subject)
+            except:
+                continue
+        
+        analysis["content_preview"] = sample_content[:500] + "..." if len(sample_content) > 500 else sample_content
+        analysis["subjects"] = list(analysis["subjects"])
+        
+        return analysis
+    
+    def format_size(self, size_bytes: int) -> str:
+        """Format file size in human readable format."""
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024**2:
+            return f"{size_bytes/1024:.1f} KB"
+        else:
+            return f"{size_bytes/(1024**2):.1f} MB"
+    
+    def ask_gemini_conversational(self, user_input: str, context: str = "") -> str:
+        """Ask Gemini for conversational response with context."""
+        conversation_history = "\n".join(self.conversation_context[-3:]) if self.conversation_context else ""
+        
+        prompt = f"""
+You are a friendly, intelligent study assistant helping a student organize their learning materials. 
+
+Context about current session:
+{context}
+
+Recent conversation:
+{conversation_history}
+
+Student says: "{user_input}"
+
+Respond naturally and helpfully. You can:
+- Help them choose study materials
+- Suggest study strategies  
+- Generate flashcards or quizzes
+- Analyze their progress
+- Give encouragement and study tips
+
+Keep responses concise but engaging. Ask follow-up questions when helpful.
+"""
+        
+        response = call_gemini_cli(prompt)
+        return response if response else "I'm here to help with your studies! What would you like to work on?"
+    
+    def conversational_interface(self):
+        """Main conversational interface."""
+        from datetime import datetime
+        self.session_data["start_time"] = datetime.now()
+        
+        print_welcome()
+        console.print("\nHello! I'm your AI study assistant. Let me help you turn your notes into an engaging learning experience.")
+        
+        # Discover and present directories
+        console.print("\n[blue]Let me scan for your study materials...[/blue]")
+        directories = self.discover_directories()
+        
+        if not directories:
+            console.print("[yellow]I couldn't find any study directories with .md, .txt, or .pdf files.[/yellow]")
+            console.print("Would you like to create a sample directory or specify a different location?")
+            
+            user_input = input("\nYou: ").strip()
+            if "sample" in user_input.lower() or "demo" in user_input.lower():
+                self.create_sample_data()
+                directories = self.discover_directories()
+        
+        if directories:
+            console.print(f"\n[green]Great! I found {len(directories)} directories with study materials:[/green]")
+            
+            for i, directory in enumerate(directories, 1):
+                analysis = self.analyze_directory(directory)
+                dir_name = "current directory" if directory.name == "." else directory.name
+                console.print(f"\n{i}. [cyan]{dir_name}[/cyan]")
+                console.print(f"   📁 {analysis['total_files']} files ({self.format_size(analysis['total_size'])})")
+                
+                if analysis['subjects']:
+                    console.print(f"   📚 Subjects detected: {', '.join(analysis['subjects'])}")
+                
+                if analysis['markdown_files']:
+                    console.print(f"   📝 Markdown: {', '.join(analysis['markdown_files'][:3])}")
+                    if len(analysis['markdown_files']) > 3:
+                        console.print(f"       ... and {len(analysis['markdown_files']) - 3} more")
+            
+            # Let user choose directory conversationally
+            console.print(f"\nWhich directory would you like to focus on? You can say the number or describe what you're looking for.")
+            
+            while True:
+                user_input = input("\nYou: ").strip()
+                
+                if not user_input:
+                    continue
+                
+                # Try to parse directory choice
+                directory_choice = self.parse_directory_choice(user_input, directories)
+                
+                if directory_choice:
+                    self.current_directory = directory_choice
+                    break
                 else:
-                    notes_file = file_choice
-            except ValueError:
-                notes_file = file_choice
-        else:
-            notes_file = input("Enter path to your notes file: ").strip()
-    else:
-        notes_file = input("Enter path to your notes file: ").strip()
-
-    output_file = input("Output file (default: data/flashcards.json): ").strip() or "data/flashcards.json"
-
-    ensure_data_dir()
-    if generate_flashcards_from_file(notes_file, output_file):
-        print_success("Flashcards generated! You can now take a quiz.")
-    else:
-        print_error("Failed to generate flashcards")
-
-
-def handle_quiz():
-    """Handle quiz interactively."""
-    console.print("\n[bold blue]🎯 Interactive Quiz[/bold blue]")
-
-    flashcards_file = "data/flashcards.json"
-    if not Path(flashcards_file).exists():
-        print_error("No flashcards found!")
-        choice = input("Generate flashcards first? (y/n): ").strip().lower()
-        if choice == "y":
-            handle_generate()
-        return
-
-    try:
-        num_questions = int(input("How many questions? (default: 5): ").strip() or "5")
-    except ValueError:
-        num_questions = 5
-
-    start_quiz(flashcards_file, num_questions)
-
-
-# =============================
-# MCQ (new)
-# =============================
-def handle_mcq_generate():
-    """Interactive MCQ generation using mcq.py logic."""
-    console.print("\n[bold blue]📝 Generate MCQs[/bold blue]")
-
-    # Offer files in ./data
-    data_dir = Path("data")
-    notes_path = None
-    if data_dir.exists():
-        md_files = list(data_dir.glob("*.md")) + list(data_dir.glob("*.txt"))
-        if md_files:
-            console.print("\n[cyan]Available notes files:[/cyan]")
-            for i, f in enumerate(md_files, 1):
-                console.print(f"  {i}. {f.name}")
-            sel = input("\nChoose a file number or enter custom path: ").strip()
+                    ai_response = self.ask_gemini_conversational(
+                        user_input, 
+                        f"Available directories: {[d.name for d in directories]}"
+                    )
+                    console.print(f"\n[blue]Assistant:[/blue] {ai_response}")
+            
+            # Analyze and summarize chosen directory
+            self.analyze_and_summarize_directory()
+            
+            # Start conversational study session
+            self.study_conversation_loop()
+    
+    def parse_directory_choice(self, user_input: str, directories: List[Path]) -> Path:
+        """Parse user input to determine directory choice."""
+        user_input = user_input.lower().strip()
+        
+        # Check for number
+        try:
+            choice_num = int(user_input) - 1
+            if 0 <= choice_num < len(directories):
+                return directories[choice_num]
+        except ValueError:
+            pass
+        
+        # Check for directory name match
+        for directory in directories:
+            dir_name = "current" if directory.name == "." else directory.name.lower()
+            if dir_name in user_input or user_input in dir_name:
+                return directory
+        
+        # Check for subject-based choice
+        for directory in directories:
+            analysis = self.analyze_directory(directory)
+            for subject in analysis['subjects']:
+                if subject.lower() in user_input:
+                    return directory
+        
+        return None
+    
+    def analyze_and_summarize_directory(self):
+        """Analyze the chosen directory and provide AI summary."""
+        if not self.current_directory:
+            return
+        
+        analysis = self.analyze_directory(self.current_directory)
+        dir_name = "current directory" if self.current_directory.name == "." else self.current_directory.name
+        
+        console.print(f"\n[green]Perfect! Let's work with the {dir_name}.[/green]")
+        console.print(f"\n[blue]📊 Directory Analysis:[/blue]")
+        console.print(f"• {analysis['total_files']} study files ({self.format_size(analysis['total_size'])})")
+        console.print(f"• File types: {len(analysis['markdown_files'])} markdown, {len(analysis['text_files'])} text, {len(analysis['pdf_files'])} PDF")
+        
+        if analysis['subjects']:
+            console.print(f"• Detected subjects: {', '.join(analysis['subjects'])}")
+        
+        # Get AI summary of content
+        if analysis['content_preview']:
+            console.print(f"\n[blue]🤖 AI Content Summary:[/blue]")
+            
+            summary_prompt = f"""
+            Analyze this study material and provide a brief, helpful summary:
+            
+            Content preview:
+            {analysis['content_preview']}
+            
+            Provide a 2-3 sentence summary of what topics are covered and suggest the best study approach.
+            """
+            
+            ai_summary = call_gemini_cli(summary_prompt)
+            if ai_summary:
+                console.print(f"[cyan]{ai_summary}[/cyan]")
+            
+        self.discovered_files = analysis['markdown_files'] + analysis['text_files']
+        
+        console.print(f"\n[green]Now I can help you create flashcards, quizzes, or provide study guidance. What would you like to do?[/green]")
+    
+    def study_conversation_loop(self):
+        """Main conversation loop for study activities."""
+        while True:
             try:
-                idx = int(sel) - 1
-                notes_path = md_files[idx] if 0 <= idx < len(md_files) else Path(sel)
-            except ValueError:
-                notes_path = Path(sel)
+                user_input = input("\nYou: ").strip()
+                
+                if not user_input:
+                    continue
+                
+                # Check for exit commands
+                if user_input.lower() in ['exit', 'quit', 'bye', 'goodbye']:
+                    self.show_session_summary()
+                    break
+                
+                # Process user input and determine action
+                action = self.parse_study_intent(user_input)
+                
+                if action:
+                    self.execute_study_action(action, user_input)
+                else:
+                    # General conversational response
+                    context = f"""
+                    Current directory: {self.current_directory}
+                    Available files: {self.discovered_files}
+                    Session activities so far: {len(self.session_data['activities'])}
+                    """
+                    
+                    ai_response = self.ask_gemini_conversational(user_input, context)
+                    console.print(f"\n[blue]Assistant:[/blue] {ai_response}")
+                
+                # Add to conversation context
+                self.conversation_context.append(f"You: {user_input}")
+                
+            except KeyboardInterrupt:
+                self.show_session_summary()
+                break
+            except Exception as e:
+                print_error(f"Error: {e}")
+    
+    def parse_study_intent(self, user_input: str) -> str:
+        """Parse user intent from natural language."""
+        user_lower = user_input.lower()
+        
+        # Intent mapping
+        if any(word in user_lower for word in ['flashcard', 'flash card', 'generate', 'create card']):
+            return 'generate_flashcards'
+        elif any(word in user_lower for word in ['quiz', 'test', 'question', 'ask me']):
+            return 'start_quiz'
+        elif any(word in user_lower for word in ['mcq', 'multiple choice', 'choice question']):
+            return 'mcq_quiz'
+        elif any(word in user_lower for word in ['progress', 'stats', 'statistics', 'how am i doing']):
+            return 'show_stats'
+        elif any(word in user_lower for word in ['help', 'what can', 'options']):
+            return 'show_help'
+        
+        return None
+    
+    def execute_study_action(self, action: str, user_input: str):
+        """Execute the determined study action."""
+        if action == 'generate_flashcards':
+            self.handle_flashcard_generation(user_input)
+        elif action == 'start_quiz':
+            self.handle_quiz_session(user_input)
+        elif action == 'mcq_quiz':
+            self.handle_mcq_session(user_input)
+        elif action == 'show_stats':
+            self.show_progress_stats()
+        elif action == 'show_help':
+            self.show_conversational_help()
+    
+    def handle_flashcard_generation(self, user_input: str):
+        """Handle flashcard generation conversationally."""
+        console.print("\n[blue]Great! Let me create flashcards from your study materials.[/blue]")
+        
+        if not self.discovered_files:
+            console.print("[yellow]I don't see any markdown or text files in the current directory.[/yellow]")
+            return
+        
+        # Choose file automatically or ask user
+        if len(self.discovered_files) == 1:
+            chosen_file = self.discovered_files[0]
+            console.print(f"I'll use your {chosen_file} file.")
         else:
-            notes_path = Path(input("Enter path to your notes file: ").strip())
-    else:
-        notes_path = Path(input("Enter path to your notes file: ").strip())
+            console.print(f"I found {len(self.discovered_files)} files: {', '.join(self.discovered_files)}")
+            console.print("Which file would you like me to process? Or say 'all' to process all files.")
+            
+            file_choice = input("\nYou: ").strip()
+            
+            if file_choice.lower() == 'all':
+                # Process all files
+                for file in self.discovered_files:
+                    file_path = self.current_directory / file
+                    if generate_flashcards_from_file(str(file_path)):
+                        self.session_data['files_processed'].append(file)
+                        self.session_data['activities'].append(f"Generated flashcards from {file}")
+                console.print("\n[green]Flashcards generated from all files! Ready for quiz sessions.[/green]")
+                return
+            else:
+                # Find matching file
+                chosen_file = None
+                for file in self.discovered_files:
+                    if file_choice.lower() in file.lower():
+                        chosen_file = file
+                        break
+                
+                if not chosen_file:
+                    console.print("[yellow]I couldn't find that file. Let me process the first available file.[/yellow]")
+                    chosen_file = self.discovered_files[0]
+        
+        # Generate flashcards
+        file_path = self.current_directory / chosen_file
+        if generate_flashcards_from_file(str(file_path)):
+            self.session_data['files_processed'].append(chosen_file)
+            self.session_data['activities'].append(f"Generated flashcards from {chosen_file}")
+            console.print(f"\n[green]Perfect! I've created interactive flashcards from {chosen_file}.[/green]")
+            console.print("Would you like to start a quiz session now?")
+        else:
+            console.print("[red]Sorry, I had trouble generating flashcards from that file.[/red]")
+    
+    def handle_quiz_session(self, user_input: str):
+        """Handle quiz session conversationally."""
+        flashcards_file = "data/flashcards.json"
+        
+        if not Path(flashcards_file).exists():
+            console.print("[yellow]I don't have any flashcards ready yet. Let me generate some first![/yellow]")
+            if self.discovered_files:
+                self.handle_flashcard_generation("")
+                return
+            else:
+                console.print("[red]I need some study materials first. Could you add some .md or .txt files?[/red]")
+                return
+        
+        console.print("\n[blue]Starting a quiz session! I'll ask you questions and provide feedback.[/blue]")
+        
+        # Determine number of questions from user input
+        num_questions = 5  # default
+        words = user_input.lower().split()
+        for word in words:
+            if word.isdigit():
+                num_questions = min(int(word), 20)  # cap at 20
+                break
+        
+        console.print(f"I'll ask you {num_questions} questions. Ready? Here we go!\n")
+        
+        # Track quiz performance
+        initial_correct = self.session_data['correct_answers']
+        initial_total = self.session_data['total_questions']
+        
+        start_quiz(flashcards_file, num_questions)
+        
+        # Update session data
+        self.session_data['quiz_sessions'] += 1
+        self.session_data['activities'].append(f"Completed quiz with {num_questions} questions")
+        
+        # Check if progress was updated
+        progress_data = load_json("data/progress.json")
+        if progress_data:
+            new_correct = progress_data.get('correct_answers', 0)
+            new_total = progress_data.get('total_questions', 0)
+            
+            session_correct = new_correct - initial_correct
+            session_total = new_total - initial_total
+            
+            self.session_data['correct_answers'] = new_correct
+            self.session_data['total_questions'] = new_total
+            
+            if session_total > 0:
+                session_accuracy = (session_correct / session_total) * 100
+                console.print(f"\n[blue]Nice work! In this session: {session_correct}/{session_total} ({session_accuracy:.1f}%)[/blue]")
+        
+        console.print("\nWhat would you like to do next? More questions, different study method, or check your progress?")
+    
+    def handle_mcq_session(self, user_input: str):
+        """Handle MCQ session conversationally."""
+        console.print("\n[blue]I'll create multiple choice questions for you![/blue]")
+        
+        if not self.discovered_files:
+            console.print("[yellow]I need some study materials first. Let me know if you have any .md files.[/yellow]")
+            return
+        
+        # Generate MCQs
+        chosen_file = self.discovered_files[0]  # Use first available file
+        file_path = self.current_directory / chosen_file
+        
+        try:
+            mcq_path = generate_mcqs(file_path, use_gemini=True)
+            console.print(f"[green]Created multiple choice questions from {chosen_file}![/green]")
+            
+            console.print("\nStarting MCQ quiz...")
+            run_mcq_quiz(mcq_path, limit=5)
+            
+            self.session_data['activities'].append(f"Completed MCQ quiz from {chosen_file}")
+            console.print("\nHow did that feel? Would you like more practice or try a different study method?")
+            
+        except Exception as e:
+            console.print(f"[red]Sorry, I had trouble creating MCQs: {e}[/red]")
+    
+    def show_progress_stats(self):
+        """Show enhanced progress statistics conversationally."""
+        progress_data = load_json("data/progress.json")
+        
+        if not progress_data:
+            console.print("[blue]You're just getting started! No quiz data yet, but that's perfectly fine.[/blue]")
+            console.print("Take a few quizzes and I'll be able to show you some interesting progress insights!")
+            return
+        
+        total_sessions = progress_data.get('total_sessions', 0)
+        total_questions = progress_data.get('total_questions', 0)
+        correct_answers = progress_data.get('correct_answers', 0)
+        difficult_concepts = progress_data.get('difficult_concepts', {})
+        
+        accuracy = (correct_answers / total_questions * 100) if total_questions > 0 else 0
+        
+        console.print(f"\n[blue]📊 Your Learning Analytics:[/blue]")
+        console.print(f"")
+        
+        # Performance overview
+        console.print(f"🎯 [bold]Overall Performance[/bold]")
+        console.print(f"   • Study sessions completed: {total_sessions}")
+        console.print(f"   • Total questions answered: {total_questions}")
+        console.print(f"   • Overall accuracy: {accuracy:.1f}% ({correct_answers} correct)")
+        console.print(f"   • Questions per session: {total_questions/total_sessions:.1f}" if total_sessions > 0 else "   • Questions per session: 0")
+        
+        # Performance level
+        if accuracy >= 90:
+            level = "🏆 Expert"
+            advice = "Outstanding! You've mastered this material. Consider teaching others or tackling more advanced topics."
+        elif accuracy >= 80:
+            level = "🥇 Advanced"
+            advice = "Excellent work! You have strong command of the material. Focus on the few remaining weak spots."
+        elif accuracy >= 70:
+            level = "🥈 Proficient" 
+            advice = "Good progress! Regular practice will boost your accuracy to the next level."
+        elif accuracy >= 60:
+            level = "🥉 Developing"
+            advice = "You're building solid foundations. Review concepts more frequently for better retention."
+        else:
+            level = "📚 Learning"
+            advice = "Every expert started here! Focus on understanding concepts before memorizing facts."
+        
+        console.print(f"\n🎖️  [bold]Current Level: {level}[/bold]")
+        console.print(f"   💡 [italic]{advice}[/italic]")
+        
+        # Learning insights
+        if total_sessions >= 3:
+            console.print(f"\n🧠 [bold]Learning Insights[/bold]")
+            
+            # Study consistency
+            if total_sessions >= 5:
+                avg_accuracy = accuracy
+                console.print(f"   • Study consistency: {'Excellent' if avg_accuracy > 75 else 'Good' if avg_accuracy > 60 else 'Building momentum'}")
+            
+            # Retention analysis
+            if difficult_concepts:
+                struggle_rate = len(difficult_concepts) / total_questions * 100 if total_questions > 0 else 0
+                console.print(f"   • Retention rate: {100-struggle_rate:.0f}% (you retain most concepts well)")
+            
+            # Learning velocity
+            questions_per_session = total_questions / total_sessions
+            if questions_per_session >= 8:
+                console.print(f"   • Learning pace: High intensity (great for rapid progress)")
+            elif questions_per_session >= 5:
+                console.print(f"   • Learning pace: Steady and sustainable")
+            else:
+                console.print(f"   • Learning pace: Gentle (perfect for deep understanding)")
+        
+        # Difficult concepts analysis
+        if difficult_concepts:
+            console.print(f"\n🎯 [bold]Areas for Review[/bold]")
+            sorted_difficult = sorted(difficult_concepts.items(), key=lambda x: x[1], reverse=True)
+            
+            for i, (concept, misses) in enumerate(sorted_difficult[:5], 1):
+                miss_rate = (misses / total_sessions * 100) if total_sessions > 0 else 0
+                difficulty_level = "High" if miss_rate > 50 else "Medium" if miss_rate > 25 else "Low"
+                console.print(f"   {i}. {concept}")
+                console.print(f"      [red]Missed {misses} times ({miss_rate:.0f}% of sessions) - {difficulty_level} priority[/red]")
+            
+            if len(sorted_difficult) > 5:
+                console.print(f"   ... and {len(sorted_difficult) - 5} more concepts")
+        
+        # Study recommendations
+        console.print(f"\n📈 [bold]Personalized Recommendations[/bold]")
+        
+        if accuracy < 60:
+            console.print(f"   • Focus on understanding core concepts before speed")
+            console.print(f"   • Use flashcards to build foundational knowledge")
+            console.print(f"   • Review difficult concepts daily for 5-10 minutes")
+        elif accuracy < 80:
+            console.print(f"   • Target your weakest 3-5 concepts for focused review")
+            console.print(f"   • Try MCQ mode to test understanding vs. recognition")
+            console.print(f"   • Increase study session frequency")
+        else:
+            console.print(f"   • Challenge yourself with advanced materials")
+            console.print(f"   • Try teaching concepts to solidify knowledge")
+            console.print(f"   • Consider timed quizzes to improve recall speed")
+        
+        # Motivational insight
+        if total_sessions >= 2:
+            console.print(f"\n🌟 [bold]Motivation Boost[/bold]")
+            if accuracy >= 70:
+                console.print(f"   You've answered {correct_answers} questions correctly - that's fantastic progress!")
+            else:
+                console.print(f"   You've completed {total_sessions} study sessions - persistence is key to mastery!")
+            
+            console.print(f"   Keep up the momentum and you'll see even better results!")
 
-    if not notes_path or not notes_path.exists():
-        print_error("Notes file not found.")
-        return
-
-    try:
-        num = int(input("Number of MCQs to aim for (default: 10): ").strip() or "10")
-    except ValueError:
-        num = 10
-
-    use_gemini_input = input("Use Gemini for generation? (Y/n): ").strip().lower()
-    use_gemini = False if use_gemini_input == "n" else True
-
-    ensure_data_dir()
-    out = Path("data/mcqs.json")
-    try:
-        generate_mcqs(notes_path, out_path=out, num_questions=num, use_gemini=use_gemini)
-        print_success(f"MCQs saved → {out}")
-    except Exception as e:
-        print_error(f"Failed to generate MCQs: {e}")
-
-
-def handle_mcq_quiz():
-    """Interactive MCQ quiz."""
-    console.print("\n[bold blue]🧪 MCQ Quiz[/bold blue]")
-
-    mcq_file = Path("data/mcqs.json")
-    if not mcq_file.exists():
-        print_error("No MCQs found! Generate them first.")
-        choice = input("Generate MCQs now? (y/n): ").strip().lower()
-        if choice == "y":
-            handle_mcq_generate()
-        return
-
-    try:
-        limit = int(input("How many MCQs? (blank = all): ").strip() or "0")
-        limit = None if limit == 0 else limit
-    except ValueError:
-        limit = None
-
-    try:
-        run_mcq_quiz(mcq_path=mcq_file, limit=limit, shuffle=True)
-    except Exception as e:
-        print_error(f"Error running MCQ quiz: {e}")
-
-
-# =============================
-# Misc (existing)
-# =============================
-def handle_stats():
-    """Handle stats display."""
-    console.print("\n[bold blue]📊 Study Statistics[/bold blue]")
-
-    progress_file = "data/progress.json"
-    progress_data = load_json(progress_file)
-
-    if not progress_data:
-        print_info("No study statistics yet. Take a quiz to start tracking!")
-        return
-
-    display_stats(progress_data)
-
-
-def handle_demo():
-    """Handle demo mode."""
-    console.print("\n[bold blue]🎮 Demo Mode[/bold blue]")
-    print_info("Creating sample data and running demo...")
-
-    ensure_data_dir()
-
-    sample_notes = """# Biology Study Notes
+    
+    def show_conversational_help(self):
+        """Show help in a conversational way."""
+        console.print(f"\n[blue]I'm here to help you study more effectively! Here's what I can do:[/blue]")
+        console.print(f"")
+        console.print(f"📚 [cyan]Generate flashcards[/cyan] - Just say 'create flashcards' or 'make cards'")
+        console.print(f"🎯 [cyan]Quiz you[/cyan] - Say 'quiz me', 'ask questions', or 'test me'")
+        console.print(f"📝 [cyan]Multiple choice[/cyan] - Try 'MCQ quiz' or 'multiple choice questions'")
+        console.print(f"📊 [cyan]Show progress[/cyan] - Ask 'how am I doing?' or 'show my stats'")
+        console.print(f"")
+        console.print(f"Just talk to me naturally! I understand requests like:")
+        console.print(f"• 'Can you quiz me on biology?'")
+        console.print(f"• 'Make flashcards from my notes'")
+        console.print(f"• 'How's my progress?'")
+        console.print(f"• 'I want to practice with 10 questions'")
+        console.print(f"")
+        console.print(f"Say 'exit' or 'goodbye' when you're done studying.")
+    
+    def create_sample_data(self):
+        """Create sample study data."""
+        ensure_data_dir()
+        
+        sample_notes = """# Biology Study Notes
 
 **Photosynthesis**: The process by which plants convert sunlight, carbon dioxide, and water into glucose and oxygen.
+
 **Mitochondria**: Known as the powerhouse of the cell, these organelles produce ATP through cellular respiration.
+
 **DNA**: Deoxyribonucleic acid, the hereditary material that contains genetic instructions for all living organisms.
+
 **Osmosis**: The movement of water molecules through a semipermeable membrane from an area of high concentration to low concentration.
+
 **ATP**: Adenosine triphosphate, the main energy currency of the cell.
+
 **Cell Membrane**: The flexible boundary that controls what enters and exits the cell.
+
 **Chloroplast**: The organelle where photosynthesis occurs in plant cells.
 """
-    sample_path = Path("data/notes.md")
-    sample_path.write_text(sample_notes, encoding="utf-8")
-    print_success("Sample notes created!")
+        
+        sample_path = Path("data/sample_biology_notes.md")
+        sample_path.write_text(sample_notes, encoding='utf-8')
+        console.print("[green]I've created some sample biology notes for you to try![/green]")
+    
+    def show_session_summary(self):
+        """Show summary when user exits."""
+        from datetime import datetime
+        
+        if not self.session_data['start_time']:
+            console.print("\n[blue]Thanks for trying Memory Palace CLI! Come back anytime.[/blue]")
+            return
+        
+        duration = datetime.now() - self.session_data['start_time']
+        minutes = int(duration.total_seconds() / 60)
+        
+        console.print(f"\n[blue]📋 Session Summary[/blue]")
+        console.print(f"⏱️  Study time: {minutes} minutes")
+        console.print(f"📁 Directory: {self.current_directory}")
+        console.print(f"📝 Files processed: {len(self.session_data['files_processed'])}")
+        console.print(f"🎯 Quiz sessions: {self.session_data['quiz_sessions']}")
+        
+        if self.session_data['activities']:
+            console.print(f"\n[cyan]What you accomplished:[/cyan]")
+            for activity in self.session_data['activities']:
+                console.print(f"• {activity}")
+        
+        # AI encouragement
+        encouragement_prompt = f"""
+        A student just finished a study session. They spent {minutes} minutes studying, 
+        completed {self.session_data['quiz_sessions']} quiz sessions, and processed {len(self.session_data['files_processed'])} files.
+        
+        Give them a brief, encouraging message about their study session (1-2 sentences).
+        """
+        
+        ai_message = call_gemini_cli(encouragement_prompt)
+        if ai_message:
+            console.print(f"\n[green]🤖 {ai_message}[/green]")
+        
+        console.print(f"\n[blue]Keep up the great work! See you next time! 👋[/blue]")
 
-    if generate_flashcards_from_file(str(sample_path)):
-        print_success("Demo flashcards generated!")
-        choice = input("Start demo quiz? (y/n): ").strip().lower()
-        if choice == "y":
-            start_quiz("data/flashcards.json", 3)
-
-
-def handle_debug():
-    """Handle debug mode."""
-    console.print("\n[bold blue]🔍 Debug & Setup Check[/bold blue]")
-
-    import subprocess
-
-    required_packages = ['click', 'colorama', 'rich', 'python-dotenv', 'requests']
-    for package in required_packages:
-        try:
-            __import__(package)
-            console.print(f"[green]✅ {package} installed[/green]")
-        except ImportError:
-            console.print(f"[red]❌ {package} NOT installed[/red]")
-
-    api_key = os.getenv('GOOGLE_AI_STUDIO_API_KEY')
-    if api_key:
-        console.print(f"[green]✅ API key found (length: {len(api_key)})[/green]")
-    else:
-        console.print("[red]❌ API key NOT found[/red]")
-        console.print("[yellow]Create .env file with: GOOGLE_AI_STUDIO_API_KEY=your-key[/yellow]")
-
-    if Path('.env').exists():
-        console.print("[green]✅ .env file exists[/green]")
-    else:
-        console.print("[red]❌ .env file missing[/red]")
-
-    try:
-        result = subprocess.run(['gemini', '--version'], capture_output=True, text=True, shell=True)
-        if result.returncode == 0:
-            console.print(f"[green]✅ Gemini CLI installed: {result.stdout.strip()}[/green]")
-        else:
-            console.print("[red]❌ Gemini CLI not working[/red]")
-    except Exception:
-        console.print("[red]❌ Gemini CLI not found[/red]")
-        console.print("[yellow]Install with: npm install -g @google/gemini-cli[/yellow]")
-
-    required_files = ['utils.py', 'flashcards.py', 'quiz.py', 'mcq.py']
-    for file in required_files:
-        if Path(file).exists():
-            console.print(f"[green]✅ {file} exists[/green]")
-        else:
-            console.print(f"[red]❌ {file} missing[/red]")
-
-
-def show_help():
-    """Show help information."""
-    console.print("\n[bold blue]❓ Help & Commands[/bold blue]")
-
-    help_text = """
-[cyan]Memory Palace CLI - Help Guide[/cyan]
-
-[bold]🏛️ What is Memory Palace CLI?[/bold]
-Transform boring study notes into fun, memorable flashcards with AI-generated 
-mnemonics and interactive quizzes!
-
-[bold]🚀 Quick Start:[/bold]
-1. Put your notes in .md or .txt files (format: "Term: Definition")
-2. Choose option 1 to generate flashcards
-3. Choose option 2 to start quiz
-4. Option 7 to generate MCQs; Option 8 to take an MCQ quiz
-5. Let AI create funny memory hooks to help you remember!
-
-[bold]📝 Notes Format:[/bold]
-**Photosynthesis**: The process plants use to convert sunlight into energy
-**DNA**: Contains genetic instructions for living organisms
-
-[bold]🔧 Setup Requirements:[/bold]
-• Gemini CLI: npm install -g @google/gemini-cli
-• API Key: Get from https://makersuite.google.com/app/apikey
-• Create .env file with: GOOGLE_AI_STUDIO_API_KEY=your-key
-"""
-    console.print(help_text)
-
-
-def display_stats(progress_data):
-    """Display formatted statistics."""
-    total_sessions = progress_data.get('total_sessions', 0)
-    total_questions = progress_data.get('total_questions', 0)
-    correct_answers = progress_data.get('correct_answers', 0)
-    difficult_concepts = progress_data.get('difficult_concepts', {})
-
-    accuracy = (correct_answers / total_questions * 100) if total_questions > 0 else 0
-
-    console.print(f"\n[bold]📊 Your Study Statistics[/bold]")
-    console.print(f"Total Quiz Sessions: {total_sessions}")
-    console.print(f"Questions Answered: {total_questions}")
-    console.print(f"Correct Answers: {correct_answers}")
-    console.print(f"Overall Accuracy: {accuracy:.1f}%")
-
-    if accuracy >= 80:
-        console.print("[green]🎉 Excellent work! You're mastering this material![/green]")
-    elif accuracy >= 60:
-        console.print("[yellow]👍 Good job! Keep practicing those tricky concepts.[/yellow]")
-    else:
-        console.print("[blue]💪 Keep studying! Every expert was once a beginner.[/blue]")
-
-    if difficult_concepts:
-        console.print("\n[bold yellow]🎯 Concepts to Review (most missed):[/bold yellow]")
-        sorted_concepts = sorted(difficult_concepts.items(), key=lambda x: x[1], reverse=True)
-        for concept, misses in sorted_concepts[:5]:
-            console.print(f"• {concept} [dim](missed {misses} times)[/dim]")
-
-
-# =============================
-# CLI entry (adds simple arg support for MCQ)
-# =============================
 def main():
-    """Main entry point."""
-    print_welcome()
-
-    # Basic command-line mode for MCQ
-    if len(sys.argv) > 1:
-        args = sys.argv[1:]
-        cmd = args[0].lower()
-
-        if cmd == "mcq-generate":
-            if len(args) < 2:
-                print_error("Usage: python main.py mcq-generate <notes.md> [--num 10] [--no-gemini]")
-                return
-            notes = Path(args[1])
-            num = 10
-            use_gemini = True
-            if "--num" in args:
-                try:
-                    num = int(args[args.index("--num") + 1])
-                except Exception:
-                    pass
-            if "--no-gemini" in args:
-                use_gemini = False
-
-            ensure_data_dir()
-            try:
-                generate_mcqs(notes, out_path=Path("data/mcqs.json"),
-                              num_questions=num, use_gemini=use_gemini)
-                print_success("MCQs generated → data/mcqs.json")
-            except Exception as e:
-                print_error(f"MCQ generation failed: {e}")
-            return
-
-        if cmd == "mcq-quiz":
-            limit = None
-            if "--num" in args:
-                try:
-                    limit = int(args[args.index("--num") + 1])
-                except Exception:
-                    pass
-            try:
-                run_mcq_quiz(Path("data/mcqs.json"), limit=limit, shuffle=True)
-            except Exception as e:
-                print_error(f"MCQ quiz failed: {e}")
-            return
-
-        console.print("[yellow]Unknown command or not supported here. Starting interactive mode...[/yellow]")
-
-    # Interactive
+    """Main entry point for conversational interface."""
     try:
-        interactive_mode()
+        assistant = StudyAssistant()
+        assistant.conversational_interface()
     except KeyboardInterrupt:
         console.print("\n[yellow]👋 Goodbye![/yellow]")
     except Exception as e:
         console.print(f"[red]❌ Error: {e}[/red]")
-
 
 if __name__ == '__main__':
     main()
