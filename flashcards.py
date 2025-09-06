@@ -1,8 +1,25 @@
+# flashcards.py
 import re
 import json
+from pathlib import Path
 from typing import List, Dict
-from utils import call_gemini_cli, save_json, console, print_success, print_error, print_info
 
+# keep using your existing helpers and console printers
+from utils import (
+    call_gemini_cli,
+    save_json,
+    console,
+    print_success,
+    print_error,
+    print_info,
+    # new helpers we added in utils.py for PDF + chunking
+    read_notes_file,
+    chunk_text,
+)
+
+# ---------------------------------------------------------------------------
+# (UNCHANGED) Your original function
+# ---------------------------------------------------------------------------
 def extract_concepts_from_notes(content: str) -> List[Dict]:
     """Extract concepts from notes using Gemini CLI."""
     
@@ -77,6 +94,9 @@ Only respond with the JSON array, no other text.
         print_error(f"Error processing Gemini response: {e}")
         return create_fallback_flashcards(content)
 
+# ---------------------------------------------------------------------------
+# (UNCHANGED) Your original function
+# ---------------------------------------------------------------------------
 def create_fallback_flashcards(content: str) -> List[Dict]:
     """Create simple flashcards if Gemini parsing fails."""
     print_info("Creating fallback flashcards from content...")
@@ -123,39 +143,80 @@ def create_fallback_flashcards(content: str) -> List[Dict]:
     print_success(f"Created {len(unique_flashcards)} fallback flashcards")
     return unique_flashcards
 
+# ---------------------------------------------------------------------------
+# New small helper (internal): dedupe across chunks by question text
+# ---------------------------------------------------------------------------
+def _dedupe_cards(cards: List[Dict]) -> List[Dict]:
+    seen = set()
+    out: List[Dict] = []
+    for c in cards:
+        q = (c.get("question") or "").strip().lower()
+        if q and q not in seen:
+            seen.add(q)
+            out.append(c)
+    return out
+
+# ---------------------------------------------------------------------------
+# (UPDATED) Generate from file: now supports .md/.txt/.pdf + chunking
+# ---------------------------------------------------------------------------
 def generate_flashcards_from_file(file_path: str, output_path: str = "data/flashcards.json") -> bool:
-    """Generate flashcards from a notes file."""
-    from utils import load_file
-    
-    print_info(f"Reading notes from: {file_path}")
-    content = load_file(file_path)
+    """Generate flashcards from a notes file (.md, .txt, or .pdf) with chunking."""
+    notes_path = Path(file_path)
+    print_info(f"Reading notes from: {notes_path}")
+
+    # Use the unified loader (supports PDF; returns '' if unreadable)
+    content = read_notes_file(notes_path)
+
     if not content:
-        print_error("Could not read file or file is empty")
+        print_error(
+            "Could not read text from file. "
+            "If this is a scanned PDF, OCR is required (not included)."
+        )
+        # Still save a minimal fallback so the flow continues gracefully
+        fallback_cards = [{
+            "question": "What is this file about?",
+            "answer": "No text extracted.",
+            "mnemonic": "PDF may be scanned (needs OCR)."
+        }]
+        if save_json(fallback_cards, output_path):
+            print_success(f"Saved minimal fallback to {output_path}")
         return False
-    
+
     print_info(f"File content length: {len(content)} characters")
-    
-    flashcards = extract_concepts_from_notes(content)
-    
-    if not flashcards:
-        print_error("No flashcards generated")
+
+    # Chunk long documents to keep prompts safe for the CLI/model
+    chunks = chunk_text(content, max_chars=8000, overlap=400)
+    if len(chunks) > 1:
+        print_info(f"Large document detected — processing in {len(chunks)} chunks")
+
+    all_cards: List[Dict] = []
+    for idx, chunk in enumerate(chunks, start=1):
+        print_info(f"➡️  Processing chunk {idx}/{len(chunks)}")
+        cards = extract_concepts_from_notes(chunk)  # reuse your existing logic
+        all_cards.extend(cards)
+
+    # Deduplicate by question
+    final_cards = _dedupe_cards(all_cards)
+
+    if not final_cards:
+        print_error("No flashcards generated across all chunks")
         return False
-    
+
     # Save flashcards
-    if save_json(flashcards, output_path):
+    if save_json(final_cards, output_path):
         print_success(f"Flashcards saved to {output_path}")
         
         # Show preview
         console.print("\n[bold]Preview of generated flashcards:[/bold]")
-        for i, card in enumerate(flashcards[:3], 1):
+        for i, card in enumerate(final_cards[:3], 1):
             console.print(f"\n[cyan]Card {i}:[/cyan]")
             console.print(f"Q: {card['question']}")
             console.print(f"A: {card['answer']}")
-            console.print(f"💡 {card['mnemonic']}")
+            console.print(f"💡 {card.get('mnemonic','')}")
         
-        if len(flashcards) > 3:
-            console.print(f"\n... and {len(flashcards) - 3} more cards!")
+        if len(final_cards) > 3:
+            console.print(f"\n... and {len(final_cards) - 3} more cards!")
         
         return True
-    
+
     return False
