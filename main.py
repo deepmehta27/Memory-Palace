@@ -12,13 +12,22 @@ from dotenv import load_dotenv
 load_dotenv()
 
 try:
-    from utils import print_welcome, print_success, print_error, print_info, ensure_data_dir, load_json, console
+    # ADDED: list_notes_files, is_supported_notes_file for PDF/.txt support
+    from utils import (
+        print_welcome, print_success, print_error, print_info,
+        ensure_data_dir, load_json, console,
+        list_notes_files, is_supported_notes_file
+    )
     from flashcards import generate_flashcards_from_file
     from quiz import start_quiz
 except ImportError as e:
     print(f"Error importing modules: {e}")
     print("Make sure all files are in the same directory and dependencies are installed.")
     sys.exit(1)
+
+# ADDED: single place for data dir
+DATA_DIR = Path("data")
+
 
 def interactive_mode():
     """Interactive menu-driven mode."""
@@ -59,43 +68,56 @@ def interactive_mode():
         except Exception as e:
             print_error(f"Error: {e}")
 
+
 def handle_generate():
-    """Handle flashcard generation interactively."""
+    """Handle flashcard generation interactively (now supports .md, .txt, .pdf)."""
     console.print("\n[bold blue]📚 Generate Flashcards[/bold blue]")
-    
-    # Show available files
-    data_dir = Path("data")
-    if data_dir.exists():
-        md_files = list(data_dir.glob("*.md")) + list(data_dir.glob("*.txt"))
-        if md_files:
-            console.print("\n[cyan]Available notes files:[/cyan]")
-            for i, file in enumerate(md_files, 1):
-                console.print(f"  {i}. {file.name}")
-            
-            file_choice = input("\nChoose a file number or enter custom path: ").strip()
-            
-            try:
-                file_index = int(file_choice) - 1
-                if 0 <= file_index < len(md_files):
-                    notes_file = str(md_files[file_index])
-                else:
-                    notes_file = file_choice
-            except ValueError:
-                notes_file = file_choice
+
+    # Show available files (.md, .txt, .pdf) from data/
+    ensure_data_dir()
+    available = list_notes_files(DATA_DIR)
+
+    notes_path: Path
+    if available:
+        console.print("\n[cyan]Available notes files:[/cyan]")
+        for i, p in enumerate(available, start=1):
+            console.print(f"  {i}. {p.name}")
+
+        file_choice = input("\nChoose a file number or enter custom path: ").strip()
+        if file_choice.isdigit():
+            idx = int(file_choice)
+            if 1 <= idx <= len(available):
+                notes_path = available[idx - 1]
+            else:
+                print_error("Invalid selection number.")
+                return
         else:
-            notes_file = input("Enter path to your notes file: ").strip()
+            notes_path = Path(file_choice).expanduser()
     else:
-        notes_file = input("Enter path to your notes file: ").strip()
-    
+        console.print("[yellow]No notes found in data/. Add .md, .txt, or .pdf files.[/yellow]")
+        custom = input("Enter path to your notes file: ").strip()
+        notes_path = Path(custom).expanduser()
+
+    # Validate selection/type
+    if not notes_path.exists():
+        print_error("File not found. Please check the path and try again.")
+        return
+    if not is_supported_notes_file(notes_path):
+        print_error("Invalid file type. Please provide a .md, .txt, or .pdf file.")
+        return
+
+    # Ask output path (keep your original behavior)
     output_file = input("Output file (default: data/flashcards.json): ").strip()
     if not output_file:
         output_file = "data/flashcards.json"
-    
+
     ensure_data_dir()
-    if generate_flashcards_from_file(notes_file, output_file):
+    # Keep your original generator signature and behavior
+    if generate_flashcards_from_file(str(notes_path), output_file):
         print_success("Flashcards generated! You can now take a quiz.")
     else:
         print_error("Failed to generate flashcards")
+
 
 def handle_quiz():
     """Handle quiz interactively."""
@@ -118,6 +140,7 @@ def handle_quiz():
     
     start_quiz(flashcards_file, num_questions)
 
+
 def handle_stats():
     """Handle stats display."""
     console.print("\n[bold blue]📊 Study Statistics[/bold blue]")
@@ -130,6 +153,7 @@ def handle_stats():
         return
     
     display_stats(progress_data)
+
 
 def handle_demo():
     """Handle demo mode."""
@@ -167,6 +191,7 @@ def handle_demo():
         choice = input("Start demo quiz? (y/n): ").strip().lower()
         if choice == "y":
             start_quiz("data/flashcards.json", 3)
+
 
 def handle_debug():
     """Handle debug mode."""
@@ -216,6 +241,7 @@ def handle_debug():
         else:
             console.print(f"[red]❌ {file} missing[/red]")
 
+
 def show_help():
     """Show help information."""
     console.print("\n[bold blue]❓ Help & Commands[/bold blue]")
@@ -228,7 +254,7 @@ Transform boring study notes into fun, memorable flashcards with AI-generated
 mnemonics and interactive quizzes!
 
 [bold]🚀 Quick Start:[/bold]
-1. Put your notes in .md or .txt files (format: "Term: Definition")
+1. Put your notes in .md, .txt, or .pdf files (format: "Term: Definition")
 2. Choose option 1 to generate flashcards
 3. Choose option 2 to start quiz
 4. Let AI create funny memory hooks to help you remember!
@@ -256,6 +282,7 @@ mnemonics and interactive quizzes!
 """
     
     console.print(help_text)
+
 
 def display_stats(progress_data):
     """Display formatted statistics."""
@@ -287,6 +314,7 @@ def display_stats(progress_data):
         for concept, misses in sorted_concepts[:5]:
             console.print(f"• {concept} [dim](missed {misses} times)[/dim]")
 
+
 def main():
     """Main entry point."""
     print_welcome()
@@ -303,6 +331,7 @@ def main():
         console.print("\n[yellow]👋 Goodbye![/yellow]")
     except Exception as e:
         console.print(f"[red]❌ Error: {e}[/red]")
+
 
 if __name__ == '__main__':
     main()

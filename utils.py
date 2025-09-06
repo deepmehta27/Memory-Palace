@@ -8,13 +8,77 @@ from rich.panel import Panel
 from rich.text import Text
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
 console = Console()
 
+from pypdf import PdfReader
+
+SUPPORTED_NOTE_EXTS = {".md", ".txt", ".pdf"}
+
+def is_supported_notes_file(path: Path) -> bool:
+    return path.suffix.lower() in SUPPORTED_NOTE_EXTS
+
+def list_notes_files(data_dir: Path) -> List[Path]:
+    files: List[Path] = []
+    if not data_dir.exists():
+        return files
+    for p in data_dir.iterdir():
+        if p.is_file() and is_supported_notes_file(p):
+            files.append(p)
+    return sorted(files, key=lambda x: x.name.lower())
+
+def extract_text_from_pdf(pdf_path: Path) -> str:
+    try:
+        reader = PdfReader(str(pdf_path))
+        if getattr(reader, "is_encrypted", False):
+            try:
+                reader.decrypt("")
+            except Exception:
+                return ""
+        texts = []
+        for page in reader.pages:
+            txt = page.extract_text() or ""
+            texts.append(txt.strip())
+        return "\n\n".join(texts).strip()
+    except Exception:
+        return ""
+
+def read_notes_file(path: Path) -> str:
+    ext = path.suffix.lower()
+    if ext in {".md", ".txt"}:
+        try:
+            return path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return ""
+    if ext == ".pdf":
+        return extract_text_from_pdf(path)
+    return ""
+
+def chunk_text(text: str, max_chars: int = 8000, overlap: int = 400) -> List[str]:
+    text = text.strip()
+    if len(text) <= max_chars:
+        return [text]
+    chunks: List[str] = []
+    start = 0
+    n = len(text)
+    while start < n:
+        end = min(start + max_chars, n)
+        window = text[start:end]
+        cut = window.rfind("\n\n")
+        if cut < int(0.6 * len(window)):
+            cut = len(window)
+        chunk = text[start:start + cut].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end == n:
+            break
+        start = start + cut - overlap
+        if start < 0:
+            start = 0
+    return chunks
+
 def load_file(file_path: str) -> str:
-    """Load content from a text file."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             return f.read()
@@ -26,7 +90,6 @@ def load_file(file_path: str) -> str:
         return ""
 
 def save_json(data: Any, file_path: str) -> bool:
-    """Save data to JSON file."""
     try:
         # Ensure directory exists
         Path(file_path).parent.mkdir(parents=True, exist_ok=True)
@@ -39,7 +102,6 @@ def save_json(data: Any, file_path: str) -> bool:
         return False
 
 def load_json(file_path: str) -> Any:
-    """Load data from JSON file."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -53,7 +115,6 @@ def load_json(file_path: str) -> Any:
         return []
 
 def call_gemini_cli(prompt: str) -> str:
-    """Call the Gemini CLI with a prompt."""
     try:
         # On Windows, try both 'gemini' and 'gemini.cmd'
         import platform
@@ -88,8 +149,7 @@ def call_gemini_cli(prompt: str) -> str:
         return ""
 
 def print_welcome():
-    """Print a fancy welcome message."""
-    welcome_text = Text("🏛️  Memory Palace CLI", style="bold magenta")
+    welcome_text = Text("Memory Palace CLI", style="bold magenta")
     subtitle = Text("Transform your notes into memorable study experiences!", style="italic cyan")
     
     panel = Panel(
@@ -100,23 +160,18 @@ def print_welcome():
     console.print(panel)
 
 def print_success(message: str):
-    """Print a success message."""
     console.print(f"[green]✅ {message}[/green]")
 
 def print_error(message: str):
-    """Print an error message."""
     console.print(f"[red]❌ {message}[/red]")
 
 def print_info(message: str):
-    """Print an info message."""
     console.print(f"[blue]ℹ️  {message}[/blue]")
 
 def ensure_data_dir():
-    """Ensure the data directory exists."""
     Path("data").mkdir(exist_ok=True)
 
 def test_gemini_connection() -> bool:
-    """Test if Gemini CLI is working."""
     try:
         response = call_gemini_cli("Say 'Hello' and nothing else")
         return bool(response and "hello" in response.lower())
