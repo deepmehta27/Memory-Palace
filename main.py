@@ -236,7 +236,7 @@ Keep responses concise but engaging. Ask follow-up questions when helpful.
         return None
     
     def analyze_and_summarize_directory(self):
-        """Analyze the chosen directory and provide AI summary."""
+        """Analyze the chosen directory and provide simple file listing."""
         if not self.current_directory:
             return
         
@@ -251,24 +251,16 @@ Keep responses concise but engaging. Ask follow-up questions when helpful.
         if analysis['subjects']:
             console.print(f"• Detected subjects: {', '.join(analysis['subjects'])}")
         
-        # Get AI summary of content
-        if analysis['content_preview']:
-            console.print(f"\n[blue]🤖 AI Content Summary:[/blue]")
+        # Show simple file listing instead of AI summary
+        if analysis['markdown_files'] or analysis['text_files'] or analysis['pdf_files']:
+            console.print(f"\n[blue]📁 Available Files:[/blue]")
             
-            summary_prompt = f"""
-            Analyze this study material and provide a brief, helpful summary:
+            all_files = analysis['markdown_files'] + analysis['text_files'] + analysis['pdf_files']
+            for i, filename in enumerate(all_files, 1):
+                file_type = "📝" if filename.endswith('.md') else "📄" if filename.endswith('.txt') else "📊"
+                console.print(f"   {i}. {file_type} {filename}")
             
-            Content preview:
-            {analysis['content_preview']}
-            
-            Provide a 2-3 sentence summary of what topics are covered and suggest the best study approach.
-            """
-            
-            ai_summary = call_gemini_cli(summary_prompt)
-            if ai_summary:
-                console.print(f"[cyan]{ai_summary}[/cyan]")
-            
-        self.discovered_files = analysis['markdown_files'] + analysis['text_files']
+        self.discovered_files = analysis['markdown_files'] + analysis['text_files'] + analysis['pdf_files']
         
         console.print(f"\n[green]Now I can help you create flashcards, quizzes, or provide study guidance. What would you like to do?[/green]")
     
@@ -344,49 +336,74 @@ Keep responses concise but engaging. Ask follow-up questions when helpful.
     
     def handle_flashcard_generation(self, user_input: str):
         """Handle flashcard generation conversationally."""
-        console.print("\n[blue]Great! Let me create flashcards from your study materials.[/blue]")
+        console.print("\n[blue]Let me create flashcards from your study materials.[/blue]")
         
         if not self.discovered_files:
-            console.print("[yellow]I don't see any markdown or text files in the current directory.[/yellow]")
+            console.print("[yellow]I don't see any study files in the current directory.[/yellow]")
             return
         
-        # Choose file automatically or ask user
+        # Show files with clearer numbering
+        console.print(f"\n[cyan]I found {len(self.discovered_files)} files:[/cyan]")
+        for i, filename in enumerate(self.discovered_files, 1):
+            file_type = "📝" if filename.endswith('.md') else "📄" if filename.endswith('.txt') else "📊"
+            console.print(f"  {i}. {file_type} {filename}")
+        
+        # Get user choice
         if len(self.discovered_files) == 1:
             chosen_file = self.discovered_files[0]
-            console.print(f"I'll use your {chosen_file} file.")
+            console.print(f"\nUsing your only file: {chosen_file}")
         else:
-            console.print(f"I found {len(self.discovered_files)} files: {', '.join(self.discovered_files)}")
-            console.print("Which file would you like me to process? Or say 'all' to process all files.")
+            console.print(f"\nWhich file would you like me to process?")
+            console.print(f"Say the number (1-{len(self.discovered_files)}) or filename, or 'all' for all files.")
             
             file_choice = input("\nYou: ").strip()
             
             if file_choice.lower() == 'all':
                 # Process all files
+                all_success = True
                 for file in self.discovered_files:
                     file_path = self.current_directory / file
+                    print_info(f"Processing {file}...")
                     if generate_flashcards_from_file(str(file_path)):
                         self.session_data['files_processed'].append(file)
                         self.session_data['activities'].append(f"Generated flashcards from {file}")
-                console.print("\n[green]Flashcards generated from all files! Ready for quiz sessions.[/green]")
+                    else:
+                        all_success = False
+                
+                if all_success:
+                    console.print("\n[green]Flashcards generated from all files! Ready for quiz sessions.[/green]")
+                else:
+                    console.print("\n[yellow]Some files could not be processed, but flashcards were created from available files.[/yellow]")
                 return
             else:
-                # Find matching file
-                chosen_file = None
-                for file in self.discovered_files:
-                    if file_choice.lower() in file.lower():
-                        chosen_file = file
-                        break
-                
-                if not chosen_file:
-                    console.print("[yellow]I couldn't find that file. Let me process the first available file.[/yellow]")
-                    chosen_file = self.discovered_files[0]
+                # Try to parse as number first
+                try:
+                    file_index = int(file_choice) - 1
+                    if 0 <= file_index < len(self.discovered_files):
+                        chosen_file = self.discovered_files[file_index]
+                    else:
+                        console.print(f"[red]Invalid number. Please choose 1-{len(self.discovered_files)}[/red]")
+                        return
+                except ValueError:
+                    # Try to find matching filename
+                    chosen_file = None
+                    for file in self.discovered_files:
+                        if file_choice.lower() in file.lower():
+                            chosen_file = file
+                            break
+                    
+                    if not chosen_file:
+                        console.print("[yellow]I couldn't find that file. Using the first available file.[/yellow]")
+                        chosen_file = self.discovered_files[0]
         
-        # Generate flashcards
+        # Generate flashcards from chosen file
         file_path = self.current_directory / chosen_file
+        print_info(f"Processing {chosen_file}...")
+        
         if generate_flashcards_from_file(str(file_path)):
             self.session_data['files_processed'].append(chosen_file)
             self.session_data['activities'].append(f"Generated flashcards from {chosen_file}")
-            console.print(f"\n[green]Perfect! I've created interactive flashcards from {chosen_file}.[/green]")
+            console.print(f"\n[green]Perfect! I've created comprehensive flashcards from {chosen_file}.[/green]")
             console.print("Would you like to start a quiz session now?")
         else:
             console.print("[red]Sorry, I had trouble generating flashcards from that file.[/red]")
@@ -643,18 +660,15 @@ Keep responses concise but engaging. Ask follow-up questions when helpful.
             for activity in self.session_data['activities']:
                 console.print(f"• {activity}")
         
-        # AI encouragement
-        encouragement_prompt = f"""
-        A student just finished a study session. They spent {minutes} minutes studying, 
-        completed {self.session_data['quiz_sessions']} quiz sessions, and processed {len(self.session_data['files_processed'])} files.
+        # Simple encouraging message instead of AI-generated
+        if minutes >= 10:
+            encouragement = "Great study session! You're building strong learning habits."
+        elif self.session_data['quiz_sessions'] > 0:
+            encouragement = "Nice work! Every quiz session helps reinforce your knowledge."
+        else:
+            encouragement = "Thanks for exploring Memory Palace CLI! Come back anytime to study."
         
-        Give them a brief, encouraging message about their study session (1-2 sentences).
-        """
-        
-        ai_message = call_gemini_cli(encouragement_prompt)
-        if ai_message:
-            console.print(f"\n[green]🤖 {ai_message}[/green]")
-        
+        console.print(f"\n[green]🌟 {encouragement}[/green]")
         console.print(f"\n[blue]Keep up the great work! See you next time! 👋[/blue]")
 
 def main():

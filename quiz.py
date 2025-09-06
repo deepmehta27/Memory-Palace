@@ -33,82 +33,34 @@ class QuizSession:
         save_json(self.progress, self.progress_path)
     
     def evaluate_answer_with_gemini(self, question: str, user_answer: str, correct_answer: str, mnemonic: str) -> Dict:
-        """Use Gemini to evaluate the answer and provide feedback."""
+        """Use simple evaluation instead of Gemini to avoid CLI issues."""
         
-        prompt = f"""
-Evaluate this student's answer and provide encouraging feedback:
-
-Question: {question}
-Student Answer: {user_answer}
-Correct Answer: {correct_answer}
-Memory Hook: {mnemonic}
-
-Respond in this JSON format:
-{{
-    "is_correct": true/false,
-    "feedback": "Your encouraging feedback here",
-    "score": 0-100
-}}
-
-Be encouraging and educational. If wrong, gently correct and remind them of the mnemonic.
-If partially correct, give partial credit and explain what was missing.
-Only respond with JSON, no other text.
-"""
+        # Skip Gemini evaluation entirely to avoid CLI help messages
+        is_correct = self.simple_answer_check(user_answer, correct_answer)
         
-        console.print("[dim]🤖 Gemini is evaluating your answer...[/dim]")
-        response = call_gemini_cli(prompt)
+        if is_correct:
+            feedback_options = [
+                "Excellent! You got it right!",
+                "Perfect! Well done!",
+                "Correct! You're learning well!",
+                "Great job! That's exactly right!",
+                "Wonderful! You nailed it!"
+            ]
+            feedback = random.choice(feedback_options)
+        else:
+            feedback_options = [
+                f"Not quite, but good effort! The answer is: {correct_answer}",
+                f"Close! The correct answer is: {correct_answer}",
+                f"Keep trying! Remember: {correct_answer}",
+                f"Learning in progress! The answer is: {correct_answer}"
+            ]
+            feedback = random.choice(feedback_options)
         
-        if not response:
-            # Fallback evaluation
-            is_correct = self.simple_answer_check(user_answer, correct_answer)
-            return {
-                "is_correct": is_correct,
-                "feedback": "Great job!" if is_correct else f"Not quite. The answer is: {correct_answer}. Remember: {mnemonic}",
-                "score": 100 if is_correct else 0
-            }
-        
-        try:
-            import json
-            import re
-            
-            # Clean response
-            cleaned_response = response.strip()
-            if cleaned_response.startswith('```'):
-                lines = cleaned_response.split('\n')
-                cleaned_response = '\n'.join(line for line in lines if not line.startswith('```'))
-            
-            # Extract JSON from response
-            json_match = re.search(r'\{.*\}', cleaned_response, re.DOTALL)
-            if json_match:
-                result = json.loads(json_match.group())
-                
-                # Validate required fields
-                if 'is_correct' not in result:
-                    result['is_correct'] = self.simple_answer_check(user_answer, correct_answer)
-                if 'feedback' not in result:
-                    result['feedback'] = "Good effort!"
-                if 'score' not in result:
-                    result['score'] = 100 if result['is_correct'] else 0
-                
-                return result
-            else:
-                # Fallback parsing
-                is_correct = "correct" in response.lower() or "right" in response.lower()
-                return {
-                    "is_correct": is_correct,
-                    "feedback": response,
-                    "score": 100 if is_correct else 0
-                }
-                
-        except Exception as e:
-            print_error(f"Error parsing Gemini evaluation: {e}")
-            # Simple fallback
-            is_correct = self.simple_answer_check(user_answer, correct_answer)
-            return {
-                "is_correct": is_correct,
-                "feedback": "Keep trying! Learning takes practice.",
-                "score": 100 if is_correct else 0
-            }
+        return {
+            "is_correct": is_correct,
+            "feedback": feedback,
+            "score": 100 if is_correct else 0
+        }
     
     def simple_answer_check(self, user_answer: str, correct_answer: str) -> bool:
         """Simple answer checking as fallback."""

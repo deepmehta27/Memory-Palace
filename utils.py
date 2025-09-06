@@ -6,6 +6,7 @@ from typing import List, Dict, Any
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
+from pypdf import PdfReader
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -44,35 +45,40 @@ def load_json(file_path: str) -> Any:
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        return []
+        return {}  # Return empty dict instead of list
     except json.JSONDecodeError:
         console.print(f"[red]Error: Invalid JSON in {file_path}[/red]")
-        return []
+        return {}
     except Exception as e:
         console.print(f"[red]Error loading JSON: {e}[/red]")
-        return []
+        return {}
 
 def call_gemini_cli(prompt: str) -> str:
-    """Call the Gemini CLI with a prompt."""
+    """Call the Gemini CLI with updated syntax."""
     try:
-        # On Windows, try both 'gemini' and 'gemini.cmd'
-        import platform
-        if platform.system() == "Windows":
-            gemini_cmd = 'gemini'
-        else:
-            gemini_cmd = 'gemini'
-            
-        # Use the Gemini CLI
+        # Try the new Gemini CLI syntax first
         result = subprocess.run(
-            [gemini_cmd, prompt],
+            ['gemini', 'ask', '--input', prompt],
             capture_output=True,
             text=True,
-            timeout=30,
-            shell=True  # Helps on Windows
+            timeout=45,
+            shell=True
         )
         
-        if result.returncode == 0:
+        if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
+        
+        # If new syntax fails, try old syntax as fallback
+        result_old = subprocess.run(
+            ['gemini', prompt],
+            capture_output=True,
+            text=True,
+            timeout=45,
+            shell=True
+        )
+        
+        if result_old.returncode == 0 and result_old.stdout.strip():
+            return result_old.stdout.strip()
         else:
             console.print(f"[red]Gemini CLI error: {result.stderr}[/red]")
             return ""
@@ -85,6 +91,51 @@ def call_gemini_cli(prompt: str) -> str:
         return ""
     except Exception as e:
         console.print(f"[red]Error calling Gemini CLI: {e}[/red]")
+        return ""
+
+# PDF reading functions
+def extract_text_from_pdf(pdf_path: Path) -> str:
+    """Extract text from PDF file."""
+    try:
+        
+        reader = PdfReader(str(pdf_path))
+        
+        if getattr(reader, "is_encrypted", False):
+            try:
+                reader.decrypt("")
+            except Exception:
+                return ""
+        
+        texts = []
+        for page in reader.pages:
+            try:
+                txt = page.extract_text() or ""
+                texts.append(txt.strip())
+            except Exception:
+                continue
+                
+        return "\n\n".join(texts).strip()
+    except ImportError:
+        console.print("[red]PyPDF not installed. Install with: pip install pypdf[/red]")
+        return ""
+    except Exception as e:
+        console.print(f"[red]Error reading PDF: {e}[/red]")
+        return ""
+
+def read_notes_file(path: Path) -> str:
+    """Read content from notes file (supports .md, .txt, .pdf)."""
+    ext = path.suffix.lower()
+    
+    if ext in {".md", ".txt"}:
+        try:
+            return path.read_text(encoding="utf-8", errors="ignore")
+        except Exception as e:
+            console.print(f"[red]Error reading {path}: {e}[/red]")
+            return ""
+    elif ext == ".pdf":
+        return extract_text_from_pdf(path)
+    else:
+        console.print(f"[red]Unsupported file type: {ext}[/red]")
         return ""
 
 def print_welcome():
@@ -116,16 +167,14 @@ def ensure_data_dir():
     Path("data").mkdir(exist_ok=True)
 
 def gemini_json(prompt: str, files: List[Path] = None, model: str = "gemini-2.5-pro") -> Any:
-    """
-    Call Gemini CLI for JSON responses. This is used by mcq.py.
-    """
+    """Call Gemini CLI for JSON responses. Used by mcq.py."""
     full_prompt = prompt
     if files:
-        # For file-based prompts, we'll read the content and include it
         for file_path in files:
             try:
-                content = file_path.read_text(encoding='utf-8', errors='ignore')
-                full_prompt += f"\n\nFile content from {file_path.name}:\n{content}"
+                content = read_notes_file(file_path)
+                if content:
+                    full_prompt += f"\n\nFile content from {file_path.name}:\n{content}"
             except Exception as e:
                 console.print(f"[red]Error reading {file_path}: {e}[/red]")
     
@@ -133,7 +182,6 @@ def gemini_json(prompt: str, files: List[Path] = None, model: str = "gemini-2.5-
     
     # Try to parse as JSON
     try:
-        import json
         return json.loads(response)
     except:
         # Return the raw response if JSON parsing fails

@@ -1,7 +1,0 @@
-# Rivers And Landforms
-
-**Watershed**: Area of land that drains to a common outlet.
-**Meander**: A winding curve in a river channel formed by lateral erosion.
-**Delta**: Depositional landform at a river mouth where sediment accumulates.
-**Erosion**: Removal of rock and soil by water, wind, or ice.
-**Deposition**: Laying down of sediments after transport.

@@ -1,7 +1,0 @@
-# Population Geography
-
-**Population Density**: Number of people per unit area.
-**Carrying Capacity**: Maximum population size the environment can sustain.
-**Urbanization**: Increase in the proportion of people living in cities.
-**Migration**: Movement of people from one place to another.
-**Demographic Transition**: Model of population change with industrialization.
