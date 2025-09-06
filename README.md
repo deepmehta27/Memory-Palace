@@ -30,7 +30,7 @@ gemini --version
 ### 2. Install Memory Palace CLI
 
 ```bash
-git clone <your-repo>
+git clone https://github.com/deepmehta27/Memory-Palace.git
 cd memory-palace-cli
 pip install -r requirements.txt
 ```
