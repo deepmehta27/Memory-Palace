@@ -1,0 +1,34 @@
+Steps in a Machine Learning Pipeline
+
+1. Data Collection:
+Gather raw data from databases, APIs, sensors, or files. Example: transaction data from an e-commerce platform.
+
+2. Data Cleaning:
+Handle missing values, outliers, and inconsistent entries. This ensures the dataset is accurate and reliable.
+
+3. Data Preprocessing:
+Transform raw data into suitable formats. Includes normalization, scaling, encoding categorical variables, and text preprocessing.
+
+4. Exploratory Data Analysis (EDA):
+Visualize data distributions, correlations, and anomalies. Tools like matplotlib or seaborn help uncover insights.
+
+5. Feature Engineering:
+Create or modify features to improve model performance. For example, extracting “day of week” from a timestamp.
+
+6. Model Selection:
+Choose an algorithm suited for the task (e.g., Random Forest for classification, Linear Regression for prediction).
+
+7. Model Training:
+Fit the model on the training set, adjusting weights or rules to minimize error.
+
+8. Model Evaluation:
+Use test data and metrics (accuracy, precision, recall, F1-score, RMSE) to measure performance.
+
+9. Hyperparameter Tuning:
+Optimize settings using techniques like Grid Search or Bayesian Optimization.
+
+10. Deployment:
+Integrate the trained model into production environments where it can make predictions on new data.
+
+11. Monitoring and Maintenance:
+Track model drift, retrain when needed, and ensure the system remains reliable and accurate.
