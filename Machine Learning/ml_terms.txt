@@ -1,0 +1,19 @@
+Overfitting: A model that performs well on training data but poorly on unseen data because it memorized instead of generalizing.
+
+Underfitting: A model that is too simplistic to capture important relationships in the data.
+
+Bias: Systematic error introduced by incorrect assumptions, leading to consistently skewed predictions.
+
+Variance: Sensitivity of a model to small fluctuations in training data, often causing unstable predictions.
+
+Feature Engineering: The process of selecting, transforming, and creating input variables that make models more effective.
+
+Cross-Validation: A method for assessing model performance by splitting the data into multiple folds for training and testing.
+
+Regularization: Techniques like L1 (Lasso) or L2 (Ridge) that penalize overly complex models to reduce overfitting.
+
+Hyperparameters: Settings defined before training (e.g., learning rate, number of trees) that affect how the model learns.
+
+Confusion Matrix: A table used to evaluate classification models, showing true positives, false positives, true negatives, and false negatives.
+
+ROC Curve: A graph showing the trade-off between sensitivity and specificity for a classifier.

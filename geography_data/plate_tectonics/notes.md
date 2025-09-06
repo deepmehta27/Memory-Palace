@@ -1,0 +1,7 @@
+# Plate Tectonics
+
+**Lithosphere**: The rigid outer shell of the Earth, broken into tectonic plates.
+**Asthenosphere**: Semi-fluid mantle layer on which plates move.
+**Convergent Boundary**: Plates move toward each other; can form mountains or subduction zones.
+**Divergent Boundary**: Plates move apart; new crust forms at mid-ocean ridges.
+**Transform Boundary**: Plates slide horizontally past each other along faults.

@@ -1,0 +1,7 @@
+# Biomes
+
+**Tropical Rainforest**: Dense, biodiverse forest near the equator with high rainfall.
+**Savanna**: Grasslands with scattered trees; distinct wet and dry seasons.
+**Desert**: Sparse vegetation adapted to very low rainfall.
+**Temperate Forest**: Broadleaf or mixed forests with four seasons.
+**Tundra**: Treeless region with permafrost and short growing seasons.
