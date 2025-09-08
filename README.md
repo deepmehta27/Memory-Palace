@@ -1,163 +1,236 @@
-# 🏛️ Memory Palace CLI
+# 🧠 Memory Palace CLI
 
-Transform your boring study notes into an interactive, AI-powered learning experience with memorable mnemonics and personalized quizzes!
+**Transform your notes into an AI-powered interactive learning experience!**
 
-Built for **AI Tinkerers × Google — Gemini CLI Buildathon**
+Built for the AI Tinkerers × Google Gemini CLI Buildathon, Memory Palace CLI is a conversational study assistant that turns boring study materials into engaging, memorable learning sessions using creative mnemonics and intelligent quizzing.
 
 ## ✨ Features
 
-- 🧠 **Smart Flashcard Generation**: Gemini extracts key concepts from your notes
-- 🎭 **Memorable Mnemonics**: Every flashcard comes with funny analogies and memory hooks
-- 🎯 **Interactive Terminal Quiz**: Live Q&A with AI-powered feedback
-- 📊 **Progress Tracking**: Track your learning journey and identify weak spots
-- 🎨 **Beautiful CLI Interface**: Rich terminal experience with colors and styling
+### 🤖 Conversational AI Interface
+- Natural language interaction - no complex menus
+- Intelligent directory discovery and content analysis
+- Context-aware responses and suggestions
+- Personalized study recommendations
+
+### 📚 Smart Study Tools
+- **Flashcard Generation**: AI-creates memorable flashcards with creative mnemonics
+- **Interactive Quizzes**: Test knowledge with intelligent answer evaluation
+- **MCQ Creation**: Generate multiple-choice questions with plausible distractors
+- **PDF Support**: Extract and study from PDF documents
+
+### 📊 Advanced Analytics
+- Real-time performance tracking
+- Learning velocity analysis
+- Streak tracking and accuracy metrics
+- Historical progress visualization
+- AI-powered study recommendations
+
+### 🎯 Key Capabilities
+- Multi-format support (.md, .txt, .pdf)
+- Semantic answer evaluation (understands meaning, not just exact matches)
+- Difficulty adaptation
+- Topic detection and categorization
+- Session persistence and progress tracking
 
 ## 🚀 Quick Start
 
-### 1. Prerequisites
+### Prerequisites
+- Python 3.8+
+- Node.js (for Gemini CLI)
+- Google AI Studio API key
 
+### Installation
+
+1. **Clone the repository**
 ```bash
-# Install Gemini CLI
-npm install -g @google/generative-ai-cli
-
-# Set up your API key
-export GOOGLE_AI_STUDIO_API_KEY="your-api-key-here"
-
-# Verify installation
-gemini --version
+git clone https://github.com/yourusername/memory-palace-cli.git
+cd memory-palace-cli
 ```
 
-### 2. Install Memory Palace CLI
-
+2. **Install Gemini CLI**
 ```bash
-git clone https://github.com/deepmehta27/Memory-Palace.git
-cd memory-palace-cli
+npm install -g @google/generative-ai-cli
+```
+
+3. **Set up your API key**
+
+Windows (Command Prompt):
+```cmd
+set GOOGLE_AI_STUDIO_API_KEY=your-api-key-here
+```
+
+Windows (PowerShell):
+```powershell
+$env:GOOGLE_AI_STUDIO_API_KEY="your-api-key-here"
+```
+
+Mac/Linux:
+```bash
+export GOOGLE_AI_STUDIO_API_KEY="your-api-key-here"
+```
+
+4. **Install Python dependencies**
+```bash
 pip install -r requirements.txt
 ```
 
-### 3. Generate Flashcards
-
+5. **Run the application**
 ```bash
-# From your own notes
-python main.py generate path/to/your/notes.md
-
-# Or try the demo
-python main.py demo
+python main.py
 ```
 
-### 4. Start Learning!
+## 📖 Usage
 
-```bash
-# Interactive quiz
-python main.py quiz
+### First Run
+When you start Memory Palace CLI, it will:
+1. Greet you and scan for study materials
+2. Show available directories with content summaries
+3. Let you select materials conversationally
+4. Offer various study modes
 
-# Limit number of questions
-python main.py quiz --num 5
+### Commands
+Just type naturally! The AI understands:
+- "Create flashcards from my biology notes"
+- "Quiz me on photosynthesis"
+- "Show me my progress"
+- "Generate multiple choice questions"
+- "How am I doing with my studies?"
 
-# Check your progress
-python main.py stats
+### Example Session
+```
+🧠 MEMORY PALACE CLI - AI Study Assistant
+==========================================
+
+Hello! I'm your AI study assistant. Let me help you turn your notes into an engaging learning experience.
+
+Scanning for study materials...
+
+Found 1 study directory:
+
+1. 📁 data
+   Files: 3 (12.5 KB)
+   Subjects: biology
+   Types: 3 markdown
+
+Which directory would you like to work with?
+You: data
+
+✓ Selected: data
+Found 3 study files.
+
+📚 Content Summary:
+Your materials cover cell biology, photosynthesis, DNA structure, genetics, 
+cellular respiration, evolution, and ecology.
+
+What would you like to do?
+• Generate flashcards from your notes
+• Take a quiz to test your knowledge
+• Create multiple choice questions
+• View your progress and analytics
+
+You: quiz me on cells
+
+Starting quiz session!
+Loaded 25 flashcards!
+
+Question 1/10:
+What is the control center of the cell that contains DNA?
+
+Your answer: nucleus
+
+✓ Perfect! That's exactly right! 🎉
+
+[Quiz continues...]
+
+📊 QUIZ RESULTS
+================
+✅ Correct: 8
+❌ Wrong: 2
+📊 Accuracy: 80.0%
+🔥 Best Streak: 5
+⭐ EXCELLENT! Great job!
 ```
 
-## 📖 Usage Examples
-
-### Generate flashcards from biology notes:
-```bash
-python main.py generate data/biology_notes.md
-```
-
-**Output**: Creates `data/flashcards.json` with questions, answers, and mnemonics like:
-- **Q**: What is photosynthesis?
-- **A**: The process plants use to convert sunlight into energy
-- **💡**: Think of plants as solar panels making sugar batteries! ☀️🔋
-
-### Take an interactive quiz:
-```bash
-python main.py quiz
-```
-
-**Experience**: 
-- Gemini asks you questions in the terminal
-- You type your answers
-- Get instant AI feedback with encouraging comments
-- See your mnemonics to help remember
-
-### Track your progress:
-```bash
-python main.py stats
-```
-
-**Shows**:
-- Total sessions and accuracy
-- Concepts you struggle with most
-- Learning trends over time
-
-## 🛠️ Technical Architecture
+## 📁 Project Structure
 
 ```
 memory-palace-cli/
-├── main.py            # CLI entrypoint with Click commands
-├── flashcards.py      # Gemini integration for content extraction
-├── quiz.py            # Interactive terminal quiz engine
-├── utils.py           # Utilities for Gemini CLI calls and file ops
+├── main.py              # Conversational interface & session management
+├── flashcards.py        # Flashcard generation with mnemonics
+├── quiz.py              # Interactive quiz with AI evaluation
+├── mcq.py               # Multiple choice question generation
+├── utils.py             # Gemini CLI integration & utilities
+├── requirements.txt     # Python dependencies
 ├── data/
-│   ├── *.md           # Your input notes
-│   ├── flashcards.json # Generated Q&A with mnemonics
-│   └── progress.json   # Learning progress tracking
-└── requirements.txt
+│   ├── biology_notes.md # Sample study material
+│   ├── flashcards.json  # Generated flashcards
+│   ├── mcqs.json        # Generated MCQs
+│   └── progress.json    # Learning analytics
+└── README.md
 ```
 
-## 🎯 Key Gemini CLI Integrations
+## 🎨 Features Breakdown
 
-1. **Content Analysis**: Extracts concepts and creates memorable Q&A pairs
-2. **Answer Evaluation**: Provides personalized feedback on quiz responses  
-3. **Adaptive Learning**: Identifies difficult concepts for focused review
+### Intelligent Content Processing
+- Automatically detects study vs. project files
+- Extracts key concepts and definitions
+- Generates creative memory aids
+- Supports multiple file formats
 
-## 🏆 Demo Script
+### Adaptive Learning
+- Semantic answer matching (understands paraphrasing)
+- Difficulty adjustment based on performance
+- Personalized feedback and encouragement
+- Progress-based recommendations
 
-Perfect for showing judges:
+### Beautiful Terminal UI
+- Color-coded responses
+- Progress bars and visual indicators
+- Emoji-enhanced feedback
+- Clean, readable formatting
 
-1. **Show messy notes**: `cat data/biology_notes.md`
-2. **Generate flashcards**: `python main.py generate data/biology_notes.md`
-3. **Preview results**: See generated mnemonics and memory hooks
-4. **Interactive demo**: `python main.py quiz` 
-5. **Live Q&A**: Answer questions, show Gemini's real-time feedback
-6. **Progress tracking**: `python main.py stats`
+## 🐛 Troubleshooting
 
-## 🎨 What Makes This Special
+### Gemini CLI not responding
+1. Check API key is set: `echo %GOOGLE_AI_STUDIO_API_KEY%` (Windows)
+2. Verify Gemini CLI installation: `gemini --version`
+3. Test directly: `gemini "Say hello"`
 
-- **Local-First**: All your notes stay on your machine
-- **Creative AI**: Gemini creates funny, memorable mnemonics
-- **Interactive Experience**: Not just static flashcards - live conversation
-- **Adaptive**: Learns which concepts you struggle with
-- **Practical**: Solves real study problems with style
+### PDF support not working
+Install pypdf: `pip install pypdf`
 
-## 🔧 Troubleshooting
+### No study materials found
+- Place `.md`, `.txt`, or `.pdf` files in a `data/` folder
+- Or let the app create sample materials for you
 
-**Gemini CLI not found?**
-```bash
-npm install -g @google/generative-ai-cli
-export GOOGLE_AI_STUDIO_API_KEY="your-key"
-```
+## 🤝 Contributing
 
-**No flashcards generated?**
-- Check your API key is set
-- Ensure notes file has clear concept definitions
-- Try the demo: `python main.py demo`
+Contributions are welcome! Feel free to:
+- Report bugs
+- Suggest features
+- Submit pull requests
+- Share your study materials
 
-**JSON parsing errors?**
-- The app includes fallback parsing for when Gemini's output varies
-- Check your notes format (definitions should be clear)
+## 📜 License
 
-## 🚀 Future Ideas
+MIT License - feel free to use this for your own learning!
 
-- Export to Anki format
-- Study session scheduling with calendar integration
-- Voice-based quiz mode
-- Collaborative study groups
-- Subject-specific mnemonic styles
+## 🙏 Acknowledgments
+
+- Built for AI Tinkerers × Google Gemini CLI Buildathon
+- Powered by Google's Gemini AI
+- Created with ❤️ for students everywhere
+
+## 🚀 Future Enhancements
+
+- [ ] Voice input/output support
+- [ ] Spaced repetition algorithm
+- [ ] Export to Anki/Quizlet
+- [ ] Multi-language support
+- [ ] Collaborative study sessions
+- [ ] Image-based learning
+- [ ] Study streak gamification
 
 ---
 
-**Built with ❤️ for AI Tinkerers Buildathon**
-
-*Transform your study sessions from boring to brilliant!* 🧠✨
+**Made with 🧠 by [Your Name] | Transform the way you study!**
