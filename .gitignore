@@ -33,3 +33,8 @@ Thumbs.db
 
 # Node modules (if you add any JS tools)
 node_modules/
+
+#example directory
+Geography/
+data/
+Machine Learning/
