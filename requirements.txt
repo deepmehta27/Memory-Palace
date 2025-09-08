@@ -1,6 +1,15 @@
-click>=8.0.0
-colorama>=0.4.4
-rich>=13.0.0
-python-dotenv>=0.19.0
-requests>=2.28.0
-pypdf>=4.0.0
+# Memory Palace CLI Requirements
+# Install with: pip install -r requirements.txt
+
+# Core dependencies
+rich>=13.0.0          # Beautiful terminal formatting
+click>=8.0.0          # CLI framework (optional, not used in current version)
+python-dotenv>=1.0.0  # Environment variable management
+
+# PDF support (optional but recommended)
+pypdf>=3.0.0          # PDF text extraction
+# Alternative: PyPDF2>=3.0.0
+
+# Optional enhancements
+colorama>=0.4.0      # Windows color support
+requests>=2.28.0     # HTTP requests (for future API integration)
