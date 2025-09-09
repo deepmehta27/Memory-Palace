@@ -1,13 +1,16 @@
 import json
-import os
-import subprocess
+import os, shutil, subprocess
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Any
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from pypdf import PdfReader
 from dotenv import load_dotenv
+from rich import box  # kept if used elsewhere
+
+# Resolve Gemini binary once
+GEMINI_BIN = shutil.which("gemini") or "gemini"
 
 # Load environment variables from .env file
 load_dotenv()
@@ -31,7 +34,6 @@ def save_json(data: Any, file_path: str) -> bool:
     try:
         # Ensure directory exists
         Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-        
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
         return True
@@ -53,36 +55,53 @@ def load_json(file_path: str) -> Any:
         console.print(f"[red]Error loading JSON: {e}[/red]")
         return {}
 
-def call_gemini_cli(prompt: str) -> str:
-    """Call the Gemini CLI with updated syntax."""
+def call_gemini_cli(prompt: str, model: str | None = None, timeout: int = 180) -> str:
+    """
+    Call the Gemini CLI using modern flags, forcing UTF-8.
+    Falls back to sending bytes if Windows text encoding chokes.
+    """
+    env = os.environ.copy()
+    # Accept either key name
+    if "GEMINI_API_KEY" not in env and "GOOGLE_AI_STUDIO_API_KEY" in env:
+        env["GEMINI_API_KEY"] = env["GOOGLE_AI_STUDIO_API_KEY"]
+
+    use_model = model or env.get("GEMINI_MODEL", "gemini-2.5-pro")
+    cmd = [GEMINI_BIN, "-m", use_model, "-p", ""]  # prompt via stdin
+
     try:
-        # Try the new Gemini CLI syntax first
-        result = subprocess.run(
-            ['gemini', 'ask', '--input', prompt],
-            capture_output=True,
-            text=True,
-            timeout=45,
-            shell=True
-        )
-        
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-        
-        # If new syntax fails, try old syntax as fallback
-        result_old = subprocess.run(
-            ['gemini', prompt],
-            capture_output=True,
-            text=True,
-            timeout=45,
-            shell=True
-        )
-        
-        if result_old.returncode == 0 and result_old.stdout.strip():
-            return result_old.stdout.strip()
-        else:
-            console.print(f"[red]Gemini CLI error: {result.stderr}[/red]")
+        try:
+            # Primary path: send text with explicit UTF-8
+            proc = subprocess.run(
+                cmd,
+                input=prompt,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="strict",
+                env=env,
+                shell=False,          # avoids UNC issues with cmd.exe
+                timeout=timeout,
+            )
+            stdout, stderr = proc.stdout, proc.stderr
+        except UnicodeEncodeError:
+            # Fallback: send bytes, then decode output as UTF-8
+            proc = subprocess.run(
+                cmd,
+                input=prompt.encode("utf-8", "replace"),
+                capture_output=True,
+                text=False,
+                env=env,
+                shell=False,
+                timeout=timeout,
+            )
+            stdout = (proc.stdout or b"").decode("utf-8", "replace")
+            stderr = (proc.stderr or b"").decode("utf-8", "replace")
+
+        if proc.returncode != 0:
+            console.print(f"[red]Gemini CLI failed ({proc.returncode}): {stderr.strip()}[/red]")
             return ""
-            
+        return (stdout or "").strip()
+
     except subprocess.TimeoutExpired:
         console.print("[red]Gemini CLI timeout - request took too long[/red]")
         return ""
@@ -93,19 +112,61 @@ def call_gemini_cli(prompt: str) -> str:
         console.print(f"[red]Error calling Gemini CLI: {e}[/red]")
         return ""
 
+
+# def call_gemini_cli(prompt: str, model: str | None = None, timeout: int = 180) -> str:
+#     """
+#     Call the Gemini CLI using modern flags.
+#     - Uses stdin for the prompt (handles long inputs safely).
+#     - Avoids shell to prevent UNC path issues with cmd.exe.
+#     - Accepts either GEMINI_API_KEY or GOOGLE_AI_STUDIO_API_KEY.
+#     """
+#     env = os.environ.copy()
+
+#     # Prefer GEMINI_API_KEY; fall back to GOOGLE_AI_STUDIO_API_KEY if needed
+#     if "GEMINI_API_KEY" not in env and "GOOGLE_AI_STUDIO_API_KEY" in env:
+#         env["GEMINI_API_KEY"] = env["GOOGLE_AI_STUDIO_API_KEY"]
+
+#     use_model = model or env.get("GEMINI_MODEL", "gemini-2.5-pro")
+
+#     # Build command; pass empty -p and feed prompt via stdin to avoid long cmd lines
+#     cmd = [GEMINI_BIN, "-m", use_model, "-p", ""]
+
+#     try:
+#         proc = subprocess.run(
+#             cmd,
+#             input=prompt,               # send the prompt via stdin
+#             capture_output=True,
+#             text=True,
+#             env=env,
+#             shell=False,                # critical: avoids cmd.exe (UNC-safe)
+#             timeout=timeout,
+#         )
+#         if proc.returncode != 0:
+#             # Show stderr but also return "" so callers can fallback
+#             console.print(f"[red]Gemini CLI failed ({proc.returncode}): {proc.stderr.strip()}[/red]")
+#             return ""
+#         return (proc.stdout or "").strip()
+#     except subprocess.TimeoutExpired:
+#         console.print("[red]Gemini CLI timeout - request took too long[/red]")
+#         return ""
+#     except FileNotFoundError:
+#         console.print("[red]Gemini CLI not found. Install with: npm install -g @google/gemini-cli[/red]")
+#         return ""
+#     except Exception as e:
+#         console.print(f"[red]Error calling Gemini CLI: {e}[/red]")
+#         return ""
+
 # PDF reading functions
 def extract_text_from_pdf(pdf_path: Path) -> str:
     """Extract text from PDF file."""
     try:
-        
         reader = PdfReader(str(pdf_path))
-        
         if getattr(reader, "is_encrypted", False):
             try:
-                reader.decrypt("")
+                reader.decrypt("")  # try empty password
             except Exception:
                 return ""
-        
+
         texts = []
         for page in reader.pages:
             try:
@@ -113,7 +174,6 @@ def extract_text_from_pdf(pdf_path: Path) -> str:
                 texts.append(txt.strip())
             except Exception:
                 continue
-                
         return "\n\n".join(texts).strip()
     except ImportError:
         console.print("[red]PyPDF not installed. Install with: pip install pypdf[/red]")
@@ -125,7 +185,6 @@ def extract_text_from_pdf(pdf_path: Path) -> str:
 def read_notes_file(path: Path) -> str:
     """Read content from notes file (supports .md, .txt, .pdf)."""
     ext = path.suffix.lower()
-    
     if ext in {".md", ".txt"}:
         try:
             return path.read_text(encoding="utf-8", errors="ignore")
@@ -142,7 +201,6 @@ def print_welcome():
     """Print a fancy welcome message."""
     welcome_text = Text("🏛️  Memory Palace CLI", style="bold magenta")
     subtitle = Text("Transform your notes into memorable study experiences!", style="italic cyan")
-    
     panel = Panel(
         f"{welcome_text}\n{subtitle}",
         border_style="blue",
@@ -167,7 +225,10 @@ def ensure_data_dir():
     Path("data").mkdir(exist_ok=True)
 
 def gemini_json(prompt: str, files: List[Path] = None, model: str = "gemini-2.5-pro") -> Any:
-    """Call Gemini CLI for JSON responses. Used by mcq.py."""
+    """
+    Call Gemini CLI for JSON responses. Used by mcq.py.
+    We build one big prompt that includes file contents (already chunked upstream).
+    """
     full_prompt = prompt
     if files:
         for file_path in files:
@@ -177,13 +238,13 @@ def gemini_json(prompt: str, files: List[Path] = None, model: str = "gemini-2.5-
                     full_prompt += f"\n\nFile content from {file_path.name}:\n{content}"
             except Exception as e:
                 console.print(f"[red]Error reading {file_path}: {e}[/red]")
-    
-    response = call_gemini_cli(full_prompt)
-    
+
+    response = call_gemini_cli(full_prompt, model=model)
+
     # Try to parse as JSON
     try:
         return json.loads(response)
-    except:
+    except Exception:
         # Return the raw response if JSON parsing fails
         return response
 
@@ -192,5 +253,5 @@ def test_gemini_connection() -> bool:
     try:
         response = call_gemini_cli("Say 'Hello' and nothing else")
         return bool(response and "hello" in response.lower())
-    except:
+    except Exception:
         return False
