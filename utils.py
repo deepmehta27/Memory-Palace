@@ -53,45 +53,36 @@ def load_json(file_path: str) -> Any:
         console.print(f"[red]Error loading JSON: {e}[/red]")
         return {}
 
-def call_gemini_cli(prompt: str) -> str:
-    """Call the Gemini CLI with updated syntax."""
+def call_gemini_cli(prompt: str, model: str = "gemini-2.5-pro") -> str:
+    """Call Gemini CLI correctly with --prompt."""
     try:
-        # Try the new Gemini CLI syntax first
         result = subprocess.run(
-            ['gemini', 'ask', '--input', prompt],
+            [
+                "gemini",
+                "--model", model,
+                "--prompt", prompt
+            ],
             capture_output=True,
             text=True,
-            timeout=45,
-            shell=True
+            timeout=60,
+            shell=False
         )
-        
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
-        
-        # If new syntax fails, try old syntax as fallback
-        result_old = subprocess.run(
-            ['gemini', prompt],
-            capture_output=True,
-            text=True,
-            timeout=45,
-            shell=True
-        )
-        
-        if result_old.returncode == 0 and result_old.stdout.strip():
-            return result_old.stdout.strip()
-        else:
-            console.print(f"[red]Gemini CLI error: {result.stderr}[/red]")
-            return ""
-            
+
+        console.print(f"[red]Gemini CLI error: {result.stderr}[/red]")
+        return ""
+
     except subprocess.TimeoutExpired:
-        console.print("[red]Gemini CLI timeout - request took too long[/red]")
+        console.print("[red]Gemini CLI timed out[/red]")
         return ""
     except FileNotFoundError:
         console.print("[red]Gemini CLI not found. Install with: npm install -g @google/gemini-cli[/red]")
         return ""
     except Exception as e:
-        console.print(f"[red]Error calling Gemini CLI: {e}[/red]")
+        console.print(f"[red]Error running Gemini CLI: {e}[/red]")
         return ""
+
 
 # PDF reading functions
 def extract_text_from_pdf(pdf_path: Path) -> str:

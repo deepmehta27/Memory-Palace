@@ -208,32 +208,37 @@ Keep responses concise but engaging. Ask follow-up questions when helpful.
             # Start conversational study session
             self.study_conversation_loop()
     
-    def parse_directory_choice(self, user_input: str, directories: List[Path]) -> Path:
-        """Parse user input to determine directory choice."""
-        user_input = user_input.lower().strip()
-        
-        # Check for number
-        try:
-            choice_num = int(user_input) - 1
-            if 0 <= choice_num < len(directories):
-                return directories[choice_num]
-        except ValueError:
-            pass
-        
-        # Check for directory name match
-        for directory in directories:
-            dir_name = "current" if directory.name == "." else directory.name.lower()
-            if dir_name in user_input or user_input in dir_name:
-                return directory
-        
-        # Check for subject-based choice
-        for directory in directories:
-            analysis = self.analyze_directory(directory)
-            for subject in analysis['subjects']:
-                if subject.lower() in user_input:
+    def parse_directory_choice(self, user_input: str, directories: List[Path]) -> Path | None:
+            user_input = user_input.lower().strip()
+
+            # ✅ Case 1: Numeric choice (e.g., "1", "2")
+            try:
+                choice_num = int(user_input) - 1
+                if 0 <= choice_num < len(directories):
+                    return directories[choice_num]
+            except ValueError:
+                pass
+
+            # ✅ Case 2: Exact directory name match
+            for directory in directories:
+                dir_name = directory.name.lower()
+                if dir_name == user_input:
                     return directory
-        
-        return None
+
+            # ✅ Case 3: User explicitly says "current"
+            if "current" in user_input or "here" in user_input:
+                return Path(".")
+
+            # ✅ Case 4: Subject-based choice (detected from notes)
+            for directory in directories:
+                analysis = self.analyze_directory(directory)
+                for subject in analysis["subjects"]:
+                    if subject.lower() in user_input:
+                        return directory
+
+            # ❌ Default: No match → return None so Gemini handles it
+            return None
+
     
     def analyze_and_summarize_directory(self):
         """Analyze the chosen directory and provide simple file listing."""
