@@ -11,6 +11,17 @@ from pathlib import Path
 from dotenv import load_dotenv
 from typing import List, Dict, Any
 
+# Make child processes inherit UTF-8 and keep it in this process too
+os.environ["PYTHONIOENCODING"] = "utf-8"
+
+# Reconfigure already-open text streams to UTF-8
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+# -------------------------------------------------------------------------
+
 # Load environment variables
 load_dotenv()
 
