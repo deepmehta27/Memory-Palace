@@ -220,5 +220,3 @@ MIT License - feel free to use this for your own learning!
 - Built for AI Tinkerers × Google Gemini CLI Buildathon
 - Powered by Google's Gemini AI
 - Created with ❤️ for students everywhere
-
----
