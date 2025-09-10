@@ -43,13 +43,13 @@ Built for the AI Tinkerers × Google Gemini CLI Buildathon, Memory Palace CLI is
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/yourusername/memory-palace-cli.git
+git clone https://github.com/deepmehta27/Memory-Palace.git
 cd memory-palace-cli
 ```
 
 2. **Install Gemini CLI**
 ```bash
-npm install -g @google/generative-ai-cli
+npm install -g @google/gemini-cli
 ```
 
 3. **Set up your API key**
@@ -221,16 +221,4 @@ MIT License - feel free to use this for your own learning!
 - Powered by Google's Gemini AI
 - Created with ❤️ for students everywhere
 
-## 🚀 Future Enhancements
-
-- [ ] Voice input/output support
-- [ ] Spaced repetition algorithm
-- [ ] Export to Anki/Quizlet
-- [ ] Multi-language support
-- [ ] Collaborative study sessions
-- [ ] Image-based learning
-- [ ] Study streak gamification
-
 ---
-
-**Made with 🧠 by [Your Name] | Transform the way you study!**
