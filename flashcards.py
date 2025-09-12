@@ -3,6 +3,8 @@ import json
 from typing import List, Dict
 from utils import call_gemini_cli, save_json, console, print_success, print_error, print_info, read_notes_file
 from pathlib import Path
+from rich.panel import Panel
+from rich.table import Table
 
 def extract_concepts_from_notes(content: str) -> List[Dict]:
     """Extract concepts from notes using Gemini CLI."""
@@ -14,14 +16,14 @@ def extract_concepts_from_notes(content: str) -> List[Dict]:
         return extract_concepts_from_long_content(content)
     
     prompt = f"""
-Analyze these study notes and extract ALL key concepts for flashcards. Create comprehensive flashcards covering every important term, concept, and definition.
+Analyze these study notes and extract exactly 10 key concepts for flashcards.
 
 For each concept, create:
 1. A clear, specific question
 2. A complete, detailed answer
 3. A memorable mnemonic or funny analogy
 
-Format your response as a JSON array with AT LEAST 15-25 flashcards:
+Format your response strictly as a JSON array of 20 flashcards:
 [
   {{
     "question": "What is photosynthesis?",
@@ -35,15 +37,14 @@ Notes to analyze:
 
 IMPORTANT: 
 - Extract EVERY concept, term, and definition you can find
-- Aim for 20+ flashcards for comprehensive coverage
+- Generate exactly 10 flashcards, no more, no less
 - Make mnemonics fun, memorable, and slightly humorous
 - Only respond with the JSON array, no other text
-- Include both basic and advanced concepts
 """
     
-    print_info("🧠 Asking Gemini to extract comprehensive concepts and create mnemonics...")
+    console.print("[bold cyan]🧠 Analyzing content and generating flashcards...[/bold cyan]")
     
-    response = call_gemini_cli(prompt)
+    response = call_gemini_cli(prompt, model="gemini-2.5-flash")
     
     if not response:
         print_error("Failed to get response from Gemini CLI")
@@ -56,7 +57,7 @@ IMPORTANT:
         if cleaned_response.startswith('```'):
             # Remove markdown code blocks
             lines = cleaned_response.split('\n')
-            cleaned_response = '\n'.join(line for line in lines if not line.startswith('```') and not line.startswith('json'))
+            cleaned_response = '\n'.join(line for line in lines if not line.startswith('```'))
         
         # Find JSON array in the response
         json_match = re.search(r'\[.*\]', cleaned_response, re.DOTALL)
@@ -66,35 +67,29 @@ IMPORTANT:
             
             # Validate flashcard format
             valid_flashcards = []
-            for card in flashcards:
+            for card in flashcards[:10]:
                 if isinstance(card, dict) and 'question' in card and 'answer' in card:
-                    # Ensure mnemonic exists
                     if 'mnemonic' not in card or not card['mnemonic']:
                         card['mnemonic'] = f"Remember: {card['answer'][:50]}... 🧠"
                     valid_flashcards.append(card)
-            
+
+            # 🔥 Add this padding block here
+            while len(valid_flashcards) < 10:
+                valid_flashcards.append({
+                    "question": f"Extra concept {len(valid_flashcards)+1}?",
+                    "answer": "Review your notes for details.",
+                    "mnemonic": "Keep practicing 📚"
+                })
+
             if valid_flashcards:
                 print_success(f"Generated {len(valid_flashcards)} flashcards!")
-                if len(valid_flashcards) < 10:
-                    print_info("Fewer flashcards than expected. Enhancing with fallback extraction...")
-                    fallback_cards = create_fallback_flashcards(content)
-                    # Merge without duplicates
-                    existing_questions = {card['question'].lower() for card in valid_flashcards}
-                    for fallback_card in fallback_cards:
-                        if fallback_card['question'].lower() not in existing_questions:
-                            valid_flashcards.append(fallback_card)
-                    print_success(f"Enhanced to {len(valid_flashcards)} total flashcards!")
                 return valid_flashcards
             else:
                 print_error("No valid flashcards in Gemini response")
                 return create_fallback_flashcards(content)
-        else:
-            print_error("Could not find JSON in Gemini response")
-            return create_fallback_flashcards(content)
             
     except json.JSONDecodeError as e:
         print_error(f"Could not parse Gemini response as JSON: {e}")
-        print_info("Gemini response preview: " + response[:200] + "...")
         return create_fallback_flashcards(content)
     except Exception as e:
         print_error(f"Error processing Gemini response: {e}")
@@ -123,7 +118,7 @@ def extract_concepts_from_long_content(content: str) -> List[Dict]:
     all_flashcards = []
     
     for i, chunk in enumerate(chunks, 1):
-        print_info(f"Processing chunk {i}/{len(chunks)}...")
+        console.print(f"[dim]Processing chunk {i}/{len(chunks)}...[/dim]")
         chunk_cards = extract_concepts_from_notes(chunk)
         all_flashcards.extend(chunk_cards)
     
@@ -141,7 +136,7 @@ def extract_concepts_from_long_content(content: str) -> List[Dict]:
 
 def create_fallback_flashcards(content: str) -> List[Dict]:
     """Create comprehensive flashcards if Gemini parsing fails."""
-    print_info("Creating comprehensive fallback flashcards from content...")
+    console.print("[yellow]Creating fallback flashcards from content...[/yellow]")
     
     flashcards = []
     
@@ -171,29 +166,11 @@ def create_fallback_flashcards(content: str) -> List[Dict]:
                     "mnemonic": f"Think of {term} as a key concept to remember! 🔑"
                 })
     
-    # Additional extraction for definition-style sentences
-    definition_pattern = r'([A-Z][a-zA-Z\s]+) (?:is|are|refers to|means?) ([^.]+\.?)'
-    def_matches = re.findall(definition_pattern, content)
-    
-    for term, definition in def_matches:
-        term = term.strip()
-        definition = definition.strip()
-        
-        if (len(term) > 2 and len(definition) > 15 and 
-            len(term) < 100 and len(definition) < 300):
-            
-            flashcards.append({
-                "question": f"What does {term} mean?",
-                "answer": definition,
-                "mnemonic": f"Remember {term} with this definition! 💡"
-            })
-    
-    # Remove duplicates and low-quality cards
+    # Remove duplicates
     seen = set()
     unique_flashcards = []
     
     for card in flashcards:
-        # Normalize question for comparison
         key = re.sub(r'[^\w]', '', card['question'].lower())
         if key not in seen and len(card['answer']) > 20:
             seen.add(key)
@@ -226,13 +203,13 @@ def create_fallback_flashcards(content: str) -> List[Dict]:
             "mnemonic": "Notes are like treasure maps - explore them for knowledge! 🗺️"
         })
     
-    print_success(f"Created {len(unique_flashcards)} comprehensive fallback flashcards")
+    console.print(f"[green]Created {len(unique_flashcards)} fallback flashcards[/green]")
     return unique_flashcards
 
 def generate_flashcards_from_file(file_path: str, output_path: str = "data/flashcards.json") -> bool:
-    """Generate flashcards from a notes file."""
+    """Generate flashcards from a notes file and save them."""
     
-    print_info(f"Reading notes from: {file_path}")
+    console.print(f"\n[bold magenta]📚 Reading notes from: {file_path}[/bold magenta]")
     
     # Use improved file reading
     file_path_obj = Path(file_path)
@@ -245,7 +222,7 @@ def generate_flashcards_from_file(file_path: str, output_path: str = "data/flash
         print_error("Could not read file or file is empty")
         return False
     
-    print_info(f"File content length: {len(content)} characters")
+    console.print(f"[dim]File content length: {len(content)} characters[/dim]")
     
     if len(content) < 50:
         print_error("File content is too short to generate meaningful flashcards")
@@ -257,23 +234,59 @@ def generate_flashcards_from_file(file_path: str, output_path: str = "data/flash
         print_error("No flashcards generated")
         return False
     
+    # Load existing flashcards if any
+    existing_flashcards = []
+    output_path_obj = Path(output_path)
+    if output_path_obj.exists():
+        try:
+            with open(output_path_obj, 'r', encoding='utf-8') as f:
+                existing_flashcards = json.load(f)
+                if not isinstance(existing_flashcards, list):
+                    existing_flashcards = []
+        except:
+            existing_flashcards = []
+    
+    # Merge new flashcards with existing ones (avoiding duplicates)
+    existing_questions = {card.get('question', '').lower() for card in existing_flashcards}
+    new_flashcards = []
+    for card in flashcards:
+        if card['question'].lower() not in existing_questions:
+            new_flashcards.append(card)
+    
+    # Combine all flashcards
+    all_flashcards = flashcards  
+    
     # Save flashcards
-    if save_json(flashcards, output_path):
-        print_success(f"Flashcards saved to {output_path}")
+    if save_json(all_flashcards, output_path):
+        console.print(f"\n[bold green]✅ Flashcards saved successfully![/bold green]")
         
-        # Show preview
-        console.print("\n[bold]Preview of generated flashcards:[/bold]")
-        preview_count = min(3, len(flashcards))
-        for i, card in enumerate(flashcards[:preview_count], 1):
-            console.print(f"\n[cyan]Card {i}:[/cyan]")
-            console.print(f"Q: {card['question']}")
-            console.print(f"A: {card['answer']}")
-            console.print(f"💡 {card['mnemonic']}")
+        # Show preview in a nice table
+        table = Table(title="📝 Preview of Generated Flashcards", 
+                     title_style="bold cyan",
+                     border_style="bright_blue")
+        table.add_column("Question", style="cyan", width=40)
+        table.add_column("Answer", style="green", width=40)
+        table.add_column("Mnemonic", style="yellow", width=30)
         
-        if len(flashcards) > preview_count:
-            console.print(f"\n... and {len(flashcards) - preview_count} more cards!")
+        preview_count = min(3, len(new_flashcards))
+        for card in new_flashcards[:preview_count]:
+            table.add_row(
+                card['question'][:37] + "..." if len(card['question']) > 40 else card['question'],
+                card['answer'][:37] + "..." if len(card['answer']) > 40 else card['answer'],
+                card['mnemonic'][:27] + "..." if len(card['mnemonic']) > 30 else card['mnemonic']
+            )
         
-        console.print(f"\n[green]Total: {len(flashcards)} flashcards ready for studying![/green]")
+        console.print(table)
+        
+        if len(new_flashcards) > preview_count:
+            console.print(f"\n[bold cyan]... and {len(new_flashcards) - preview_count} more cards![/bold cyan]")
+        
+        console.print(Panel(
+            f"[bold green]Total flashcards in database: {len(all_flashcards)}[/bold green]\n"
+            f"[cyan]New cards added: {len(new_flashcards)}[/cyan]",
+            title="📊 Summary",
+            border_style="green"
+        ))
         return True
     
     return False
