@@ -28,7 +28,6 @@ Built for the AI Tinkerers × Google Gemini CLI Buildathon, Memory Palace CLI is
 ### 🎯 Key Capabilities
 - Multi-format support (.md, .txt, .pdf)
 - Semantic answer evaluation (understands meaning, not just exact matches)
-- Difficulty adaptation
 - Topic detection and categorization
 - Session persistence and progress tracking
 
